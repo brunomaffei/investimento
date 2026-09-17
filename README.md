@@ -40,6 +40,26 @@ do servidor sempre tem precedência, e nenhum dos dois é registrado no log.
 | Margem de segurança | (preço-teto ÷ cotação) − 1 | 42,86 ÷ 45,14 − 1 = **−5,05%** |
 | Comprar? | margem ≥ margem mínima exigida | −5,05% < 0% → **NÃO** |
 
+Enquanto faltar premissa, o selo da última coluna diz **qual** campo preencher
+(`falta payout`, `falta LPA + payout`, `falta DPA`). E o painel de diagnóstico
+mostra a versão servida (`código <sha> · <branch>`), que é a forma rápida de
+confirmar se o `git pull` pegou.
+
+### O que a atualização automática traz — e o que não traz
+
+| Campo | Vem sozinho? |
+| --- | --- |
+| Cotação | ✅ sempre |
+| Nome e setor | ✅ sempre |
+| LPA | ⚠️ só com plano que cubra fundamentos, e com a caixa marcada |
+| DPA (FIIs) | ⚠️ mesma condição |
+| Payout | ❌ nunca — é premissa sua |
+| Lucro projetado e nº de ações | ❌ nunca — premissa sua |
+
+Ou seja: depois de atualizar as cotações, as linhas continuam em `falta payout`
+até você informar o payout de cada ativo. Isso é de propósito — payout é a sua
+leitura de quanto a empresa vai distribuir, não um dado de mercado.
+
 É o método de Décio Bazin: se o dividendo esperado por ação não paga o yield
 que você exige, o papel está caro para você — por melhor que a empresa seja.
 
@@ -114,11 +134,11 @@ O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde paro
 
 | Etapa | O que isola |
 | --- | --- |
-| Servidor local | se o app está sendo servido por `npm start` (aí nem precisa do resto) |
+| Servidor local | se o app vem do `npm start`, e se esse servidor tem `BRAPI_TOKEN` |
 | Rede: PETR4 sem token | se a chamada consegue sair do navegador |
 | Token na URL (`?token=`) | se o token é aceito como parâmetro |
 | Token no header (`Bearer`) | se o token é aceito como cabeçalho |
-| Fundamentos | se o plano cobre LPA e dividendos |
+| Fundamentos | se o plano cobre LPA e dividendos — testado em **um ticker seu**, nunca em PETR4: a brapi libera PETR4/MGLU3/VALE3/ITUB4 por completo e o resultado daria falso positivo |
 
 Causas mais comuns, em ordem:
 
