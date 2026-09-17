@@ -186,13 +186,28 @@
     return etapas;
   }
 
+  /** Complemento sobre fundamentos, que dependem do plano e não da conexão. */
+  function ressalvaDeFundamentos(fundamentos) {
+    if (!fundamentos) return '';
+    const emQual = fundamentos.rotulo?.split(' em ')[1];
+    if (!fundamentos.ok) {
+      return ` Já os fundamentos foram recusados${emQual ? ` em ${emQual}` : ''} (HTTP ${fundamentos.status}): LPA e dividendos não vêm no seu plano, então esses campos ficam para você preencher.`;
+    }
+    if (fundamentos.tickerLivre) {
+      return ` Os fundamentos só foram testados em ${emQual || 'PETR4'}, que a brapi libera de graça — isso não prova que seu plano cobre os demais.`;
+    }
+    return ` Os fundamentos também vieram${emQual ? ` em ${emQual}` : ''}, então LPA e dividendos podem ser preenchidos automaticamente.`;
+  }
+
   /** Traduz o resultado do diagnóstico em uma conclusão em português. */
   function interpretar(etapas) {
     const achar = (chave) => (etapas || []).find((e) => e.chave === chave);
     const servidor = achar('servidor');
     if (servidor?.ok && servidor.preco) {
       const origemToken = servidor.comToken ? 'o token do servidor (BRAPI_TOKEN)' : 'o token digitado aqui, repassado ao servidor';
-      return `O servidor local está respondendo e trouxe preço usando ${origemToken}. É por ele que as cotações passam — sem CORS.`;
+      const base = `O servidor local está respondendo e trouxe preço usando ${origemToken} — as cotações passam por ele, sem CORS.`;
+      // A cotação funcionar não significa que os fundamentos funcionem: reportar os dois.
+      return `${base}${ressalvaDeFundamentos(achar('fundamentos'))}`;
     }
     if (servidor?.ok && !servidor.preco) {
       const semToken = servidor.comToken === false;

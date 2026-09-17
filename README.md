@@ -193,7 +193,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 65 testes de cálculo, cotação e servidor (node puro, sem dependências)
+npm test          # 66 testes de cálculo, cotação e servidor (node puro, sem dependências)
 npm run test:ui   # 58 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
 ```
 

@@ -185,7 +185,7 @@
             <option value="dividendo"${m.modo === 'dividendo' ? ' selected' : ''}>Dividendo</option>
           </select>
         </td>
-        <td data-rotulo="Cotação atual" class="num">${inputCelula(ativo, 'cotacao', 'placeholder="0,00"')}${origem}</td>
+        <td data-rotulo="Cotação atual" class="num">${inputCelula(ativo, 'cotacao', 'placeholder="ex.: 30,50"')}${origem}</td>
         <td data-rotulo="Lucro projetado" class="num">${p.lucro}</td>
         <td data-rotulo="Qtd. ações/units" class="num">${p.qtd}</td>
         <td data-rotulo="Payout (%)" class="num">${p.payout}</td>

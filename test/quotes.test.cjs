@@ -210,6 +210,20 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     assert.match(interpretar(etapas), /recusado nas duas formas/);
   });
 
+  await teste('servidor ok + fundamentos recusados: a conclusão conta os dois', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('/api/health'), responde: () => ({ ok: true, json: async () => ({ servico: 'preco-teto', comToken: false }) }) },
+      { quando: (u) => u.includes('/api/cotacoes'), responde: () => ({ ok: true, json: async () => ({ dados: { PETR4: { preco: 48.87, lpa: 10.35 } }, erros: {} }) }) },
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 48.87 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 'bom', tickers: ['BBAS3'], fetchImpl: http });
+    const conclusao = interpretar(etapas);
+    assert.match(conclusao, /servidor local/i, 'precisa dizer que o servidor funciona');
+    assert.match(conclusao, /BBAS3/, 'precisa dizer em qual ticker os fundamentos falharam');
+    assert.match(conclusao, /403|não vêm no seu plano/, 'precisa dizer que o plano não cobre');
+  });
+
   await teste('plano sem fundamentos é diagnosticado', async () => {
     const http = fetchFalso([
       { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
