@@ -10,6 +10,9 @@
  *   node tools/servidor.mjs --porta 3000 --token abc
  *
  * Sem token, funciona nos tickers liberados pela brapi (PETR4, MGLU3, VALE3, ITUB4).
+ * Se o servidor subir sem token, ele aceita o token que o app manda em ?token= —
+ * é a mesma máquina, e evita que o token digitado na tela seja ignorado. O token
+ * nunca é registrado no log.
  * BRAPI_BASE troca a URL da API (usado pelos testes).
  */
 import { createServer } from 'node:http';
@@ -96,10 +99,17 @@ const servidor = createServer(async (pedido, resposta) => {
     const tickers = (url.searchParams.get('tickers') || '').split(',').map((t) => t.trim()).filter(Boolean);
     if (!tickers.length) return json(resposta, 400, { erro: 'Informe ?tickers=PETR4,VALE3' });
     const fundamentos = ['1', 'true', 'sim'].includes(url.searchParams.get('fundamentos') || '');
+    // O token do servidor tem precedência; o do app é reserva para quem esqueceu o BRAPI_TOKEN.
+    const tokenDoApp = (url.searchParams.get('token') || '').trim().slice(0, 200);
+    const tokenEmUso = token || tokenDoApp;
     try {
-      const resultado = await buscarCotacoes(tickers, { token, fundamentos, base });
+      const resultado = await buscarCotacoes(tickers, { token: tokenEmUso, fundamentos, base });
       const avisos = [...(resultado.avisos || [])];
-      if (!token) avisos.push('Servidor sem BRAPI_TOKEN: só os tickers liberados pela brapi respondem.');
+      if (!tokenEmUso) {
+        avisos.push('Servidor sem BRAPI_TOKEN e sem token no app: só os tickers liberados pela brapi respondem.');
+      } else if (!token) {
+        avisos.push('Usando o token digitado no app (o servidor subiu sem BRAPI_TOKEN).');
+      }
       console.log(`[cotacoes] ${tickers.join(',')} -> ${Object.keys(resultado.dados).length} ok, ${Object.keys(resultado.erros).length} com erro`);
       return json(resposta, 200, { ...resultado, avisos });
     } catch (erro) {

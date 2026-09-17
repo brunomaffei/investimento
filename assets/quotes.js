@@ -61,25 +61,31 @@
    * do servidor (sem CORS) e guarda o token fora do navegador. Detecta se esse
    * servidor está atendendo nesta origem.
    */
-  async function servidorDisponivel(opcoes) {
+  async function detectarServidor(opcoes) {
     const { fetchImpl, base = '' } = opcoes || {};
+    const ausente = { disponivel: false, comToken: false };
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
-    if (!http) return false;
+    if (!http) return ausente;
     // Em file:// não há servidor para consultar.
-    if (typeof location !== 'undefined' && !/^https?:$/.test(location.protocol)) return false;
+    if (typeof location !== 'undefined' && !/^https?:$/.test(location.protocol)) return ausente;
     try {
       const resposta = await http(`${base}/api/health`, { headers: { Accept: 'application/json' } });
-      if (!resposta.ok) return false;
+      if (!resposta.ok) return ausente;
       const corpo = await resposta.json();
-      return corpo && corpo.servico === ASSINATURA_SERVIDOR;
+      if (!corpo || corpo.servico !== ASSINATURA_SERVIDOR) return ausente;
+      return { disponivel: true, comToken: !!corpo.comToken };
     } catch {
-      return false;
+      return ausente;
     }
   }
 
-  /** Busca as cotações através do servidor local, que devolve o mesmo formato. */
+  /**
+   * Busca as cotações através do servidor local, que devolve o mesmo formato.
+   * O token é enviado só quando o servidor não tem o seu (BRAPI_TOKEN ausente):
+   * é a mesma máquina, e sem isso o token digitado na tela seria ignorado.
+   */
   async function buscarPeloServidor(tickers, opcoes) {
-    const { fundamentos = false, fetchImpl, base = '' } = opcoes || {};
+    const { fundamentos = false, fetchImpl, base = '', token } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
     const limpos = [...new Set((tickers || []).map((t) => String(t || '').trim().toUpperCase()).filter(Boolean))];
@@ -87,6 +93,7 @@
 
     const params = new URLSearchParams({ tickers: limpos.join(',') });
     if (fundamentos) params.set('fundamentos', '1');
+    if (token) params.set('token', token);
     const resposta = await http(`${base}/api/cotacoes?${params}`, { headers: { Accept: 'application/json' } });
     if (!resposta.ok) {
       const motivo = `O servidor local respondeu HTTP ${resposta.status}.`;
@@ -111,16 +118,25 @@
     if (!http) throw new Error('fetch indisponível neste ambiente.');
     const etapas = [];
 
-    const executar = async (rotulo, chave, url, cabecalhos) => {
+    const executar = async (rotulo, chave, url, cabecalhos, forma = 'brapi') => {
       const inicio = Date.now();
       try {
         const resposta = await http(url, { headers: { Accept: 'application/json', ...(cabecalhos || {}) } });
         const etapa = { rotulo, chave, ok: resposta.ok, status: resposta.status, ms: Date.now() - inicio };
         if (resposta.ok) {
           const corpo = await resposta.json().catch(() => null);
-          const primeiro = corpo && Array.isArray(corpo.results) ? corpo.results[0] : null;
-          etapa.preco = primeiro ? Number(primeiro.regularMarketPrice) || null : null;
-          etapa.lpa = primeiro?.defaultKeyStatistics?.trailingEps ?? null;
+          if (forma === 'servidor') {
+            // O servidor local devolve {dados, erros, avisos}, não o formato da brapi.
+            const info = corpo?.dados ? Object.values(corpo.dados)[0] : null;
+            etapa.preco = info?.preco ?? null;
+            etapa.lpa = info?.lpa ?? null;
+            const motivos = Object.values(corpo?.erros || {});
+            if (!info && motivos.length) etapa.detalhe = motivos[0];
+          } else {
+            const primeiro = corpo && Array.isArray(corpo.results) ? corpo.results[0] : null;
+            etapa.preco = primeiro ? Number(primeiro.regularMarketPrice) || null : null;
+            etapa.lpa = primeiro?.defaultKeyStatistics?.trailingEps ?? null;
+          }
         } else {
           etapa.detalhe = mensagemDeErro(resposta.status);
         }
@@ -133,8 +149,15 @@
       }
     };
 
-    if (await servidorDisponivel({ fetchImpl: http })) {
-      await executar('Servidor local (sem CORS)', 'servidor', '/api/cotacoes?tickers=PETR4');
+    const servidor = await detectarServidor({ fetchImpl: http });
+    if (servidor.disponivel) {
+      const params = new URLSearchParams({ tickers: 'PETR4' });
+      if (!servidor.comToken && token) params.set('token', token);
+      await executar(
+        `Servidor local (sem CORS)${servidor.comToken ? ' com BRAPI_TOKEN' : ' sem BRAPI_TOKEN'}`,
+        'servidor', `/api/cotacoes?${params}`, null, 'servidor',
+      );
+      etapas[etapas.length - 1].comToken = servidor.comToken;
     }
     // PETR4 é liberada pela brapi sem token: isola problema de rede de problema de token.
     await executar('Rede: PETR4 sem token', 'rede', `${BASE}PETR4`);
@@ -151,8 +174,15 @@
   function interpretar(etapas) {
     const achar = (chave) => (etapas || []).find((e) => e.chave === chave);
     const servidor = achar('servidor');
-    if (servidor?.ok) {
-      return 'O servidor local está respondendo e é por ele que as cotações passam — sem CORS e com o token fora do navegador.';
+    if (servidor?.ok && servidor.preco) {
+      const origemToken = servidor.comToken ? 'o token do servidor (BRAPI_TOKEN)' : 'o token digitado aqui, repassado ao servidor';
+      return `O servidor local está respondendo e trouxe preço usando ${origemToken}. É por ele que as cotações passam — sem CORS.`;
+    }
+    if (servidor?.ok && !servidor.preco) {
+      const semToken = servidor.comToken === false;
+      return semToken
+        ? `O servidor local responde, mas não trouxe preço${servidor.detalhe ? ` (${servidor.detalhe})` : ''}. Ele subiu sem BRAPI_TOKEN: reinicie com BRAPI_TOKEN=seu_token npm start, ou mantenha o token neste campo — o app agora o repassa ao servidor.`
+        : `O servidor local responde, mas não trouxe preço${servidor.detalhe ? `: ${servidor.detalhe}` : '.'}`;
     }
     const rede = achar('rede');
     if (!rede) return 'Diagnóstico não executado.';
@@ -300,7 +330,7 @@
   }
 
   return {
-    buscarCotacoes, buscarPeloServidor, servidorDisponivel, diagnosticar, interpretar,
+    buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar,
     somarProventos12m, normalizar, mensagemDeErro, motivoDeFalhaDeRede,
     LOTE, BASE, ASSINATURA_SERVIDOR,
   };

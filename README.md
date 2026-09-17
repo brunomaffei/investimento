@@ -24,6 +24,10 @@ nunca chegar ao navegador:
 BRAPI_TOKEN=seu_token npm start
 ```
 
+Se você subir o servidor **sem** `BRAPI_TOKEN`, o token digitado no campo da tela é
+repassado ao servidor local (mesma máquina, e sem isso ele seria ignorado). O token
+do servidor sempre tem precedência, e nenhum dos dois é registrado no log.
+
 ![Tela do app](docs/tela.png)
 
 ## A conta
@@ -130,8 +134,15 @@ Causas mais comuns, em ordem:
    qual caminho funcionou.
 3. **Plano sem fundamentos.** HTTP 403 só na quarta etapa: cotação atualiza, LPA e
    dividendos não.
-4. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
+4. **Servidor local sem token.** O diagnóstico mostra `✅ Servidor local … sem
+   BRAPI_TOKEN` e *respondeu sem dados*: fora de PETR4/MGLU3/VALE3/ITUB4 a brapi
+   exige token. Basta deixar o token no campo da tela (o app repassa) ou reiniciar
+   com `BRAPI_TOKEN=... npm start`.
+5. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
    `EXEMPLO` é ignorada de propósito.
+
+Se o servidor local não trouxer nada, o app tenta a consulta direto do navegador
+antes de desistir, e o status diz qual caminho funcionou.
 
 ## De onde vêm os dados "corretos"
 
@@ -162,8 +173,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 55 testes de cálculo, cotação e servidor (node puro, sem dependências)
-npm run test:ui   # 48 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
+npm test          # 61 testes de cálculo, cotação e servidor (node puro, sem dependências)
+npm run test:ui   # 57 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

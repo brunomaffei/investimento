@@ -21,12 +21,19 @@ async function teste(nome, fn) {
 
 // ---- brapi falso -----------------------------------------------------------
 const pedidosRecebidos = [];
+const LIVRES = ['PETR4', 'MGLU3', 'VALE3', 'ITUB4'];
 const brapiFalso = createServer((pedido, resposta) => {
   const url = new URL(pedido.url, 'http://local');
   pedidosRecebidos.push({ url: pedido.url, autorizacao: pedido.headers.authorization || null });
   const tickers = url.pathname.split('/').pop().split(',');
   if (url.searchParams.has('modules')) {
     resposta.writeHead(403).end('{}');
+    return;
+  }
+  // Como a brapi real: fora dos tickers livres, sem token é 401.
+  const temToken = url.searchParams.has('token') || !!pedido.headers.authorization;
+  if (!temToken && tickers.some((t) => !LIVRES.includes(t))) {
+    resposta.writeHead(401).end('{}');
     return;
   }
   resposta.writeHead(200, { 'Content-Type': 'application/json' });
@@ -62,7 +69,22 @@ const esperarServidor = async () => {
 };
 await esperarServidor();
 
+// Segundo servidor, sem token nenhum: reproduz o `npm start` sem BRAPI_TOKEN.
+const portaSemToken = 8900;
+const servidorSemToken = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(portaSemToken)], {
+  cwd: new URL('..', import.meta.url).pathname,
+  env: { ...process.env, BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' },
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+const logSemToken = [];
+servidorSemToken.stdout.on('data', (d) => logSemToken.push(String(d)));
+for (let i = 0; i < 60; i++) {
+  try { if ((await fetch(`http://127.0.0.1:${portaSemToken}/api/health`)).ok) break; } catch {}
+  await new Promise((r) => setTimeout(r, 100));
+}
+
 const url = (caminho) => `http://127.0.0.1:${porta}${caminho}`;
+const urlSemToken = (caminho) => `http://127.0.0.1:${portaSemToken}${caminho}`;
 
 try {
   console.log('servidor local — arquivos');
@@ -137,8 +159,48 @@ try {
     const r = await fetch(url('/api/cotacoes?tickers=ITSA4'));
     assert.equal(r.headers.get('cache-control'), 'no-store');
   });
+  console.log('servidor local — servidor sem BRAPI_TOKEN (caso do usuário)');
+
+  await teste('/api/health avisa que não tem token', async () => {
+    const corpo = await (await fetch(urlSemToken('/api/health'))).json();
+    assert.equal(corpo.servico, 'preco-teto');
+    assert.equal(corpo.comToken, false);
+  });
+
+  await teste('sem token nenhum, ticker não-livre falha com aviso claro', async () => {
+    const corpo = await (await fetch(urlSemToken('/api/cotacoes?tickers=BBAS3'))).json();
+    assert.deepEqual(corpo.dados, {});
+    assert.match(corpo.erros.BBAS3, /[Tt]oken/);
+    assert.ok(corpo.avisos.some((a) => /sem BRAPI_TOKEN e sem token no app/.test(a)), JSON.stringify(corpo.avisos));
+  });
+
+  await teste('token vindo do app é usado e a cotação chega', async () => {
+    const corpo = await (await fetch(urlSemToken('/api/cotacoes?tickers=BBAS3&token=TOKEN-DO-APP'))).json();
+    assert.equal(corpo.dados.BBAS3.preco, 42.5, 'com o token do app a consulta precisa funcionar');
+    assert.ok(corpo.avisos.some((a) => /token digitado no app/.test(a)), JSON.stringify(corpo.avisos));
+  });
+
+  await teste('ticker livre funciona mesmo sem token algum', async () => {
+    const corpo = await (await fetch(urlSemToken('/api/cotacoes?tickers=PETR4'))).json();
+    assert.equal(corpo.dados.PETR4.preco, 42.5);
+  });
+
+  await teste('o token do app não é registrado no log do servidor', async () => {
+    await fetch(urlSemToken('/api/cotacoes?tickers=VIVT3&token=NAO-LOGAR-ISSO'));
+    await new Promise((r) => setTimeout(r, 120));
+    assert.ok(!logSemToken.join('').includes('NAO-LOGAR-ISSO'), `log não deve conter o token: ${logSemToken.join('')}`);
+  });
+
+  await teste('token do servidor tem precedência sobre o do app', async () => {
+    pedidosRecebidos.length = 0;
+    await fetch(url('/api/cotacoes?tickers=CPLE6&token=TOKEN-DO-APP'));
+    const usouDoServidor = pedidosRecebidos.some((p) => p.url.includes(TOKEN));
+    const usouDoApp = pedidosRecebidos.some((p) => p.url.includes('TOKEN-DO-APP'));
+    assert.ok(usouDoServidor && !usouDoApp, 'deve usar o BRAPI_TOKEN do servidor');
+  });
 } finally {
   servidor.kill();
+  servidorSemToken.kill();
   brapiFalso.close();
 }
 

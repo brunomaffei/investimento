@@ -3,7 +3,7 @@
   'use strict';
 
   const { parseNumero, avaliarCarteira, avaliarAtivo } = window.Calc;
-  const { buscarCotacoes, buscarPeloServidor, servidorDisponivel, diagnosticar, interpretar } = window.Quotes;
+  const { buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar } = window.Quotes;
   const { CONFIG_PADRAO, CARTEIRA_INICIAL } = window.Seed;
 
   const CHAVE_STORAGE = 'precoteto.v1';
@@ -47,6 +47,9 @@
   const nf = (min, max) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: min, maximumFractionDigits: max });
   const fmt2 = nf(2, 2);
   const fmt0 = nf(0, 0);
+
+  const finito = (v) => typeof v === 'number' && Number.isFinite(v);
+  const positivo = (v) => finito(v) && v > 0;
 
   const vazio = '<span class="vazio">—</span>';
   const fmtMoeda = (n) => (n === null || n === undefined || !Number.isFinite(n) ? vazio : `R$ ${fmt2.format(n)}`);
@@ -261,10 +264,43 @@
   // ------------------------------------------------------------------ cotações
 
   // Detecta uma única vez se o app está sendo servido por tools/servidor.mjs.
-  let temServidor = null;
-  async function usarServidor() {
-    if (temServidor === null) temServidor = await servidorDisponivel({});
-    return temServidor;
+  let servidorDetectado = null;
+  async function servidor() {
+    if (servidorDetectado === null) servidorDetectado = await detectarServidor({});
+    return servidorDetectado;
+  }
+
+  /**
+   * Consulta pelo servidor local quando ele existe e, se ele não trouxer nada,
+   * tenta direto do navegador — que funciona quando a página vem de http://localhost.
+   */
+  async function consultar(tickers, fundamentos) {
+    const local = await servidor();
+    const token = estado.config.token;
+
+    if (local.disponivel) {
+      // Se o servidor subiu sem BRAPI_TOKEN, repassa o token digitado na tela.
+      const resultado = await buscarPeloServidor(tickers, {
+        fundamentos,
+        token: local.comToken ? '' : token,
+      });
+      if (Object.keys(resultado.dados).length) {
+        return { ...resultado, via: ' (via servidor local)' };
+      }
+
+      const direto = await buscarCotacoes(tickers, { token, fundamentos });
+      if (Object.keys(direto.dados).length) {
+        return {
+          ...direto,
+          avisos: [...(direto.avisos || []), 'O servidor local não trouxe dados; a consulta saiu direto do navegador.'],
+          via: ' (direto do navegador)',
+        };
+      }
+      return { ...resultado, via: ' (via servidor local)' };
+    }
+
+    const direto = await buscarCotacoes(tickers, { token, fundamentos });
+    return { ...direto, via: '' };
   }
 
   async function atualizarCotacoes() {
@@ -277,31 +313,29 @@
 
     botao.disabled = true;
     botao.textContent = 'Buscando…';
-    const caminho = (await usarServidor()) ? ' (via servidor local)' : '';
-    status(`Consultando ${tickers.length} ticker(s) na brapi.dev${caminho}…`);
+    status(`Consultando ${tickers.length} ticker(s) na brapi.dev…`);
 
     try {
       const fundamentos = !!estado.config.fundamentos;
-      const pelaServidor = await usarServidor();
-      const { dados, erros, avisos } = pelaServidor
-        ? await buscarPeloServidor(tickers, { fundamentos })
-        : await buscarCotacoes(tickers, { token: estado.config.token, fundamentos });
+      const { dados, erros, avisos, via: caminho } = await consultar(tickers, fundamentos);
       let atualizados = 0;
       estado.ativos.forEach((ativo) => {
         const info = dados[String(ativo.ticker || '').toUpperCase()];
         if (!info) return;
         atualizados++;
-        if (info.preco !== null) {
+        // A resposta vem de fora (API ou servidor): nunca escrever "0,00"/"NaN" por
+        // causa de um campo ausente ou de tipo inesperado.
+        if (positivo(info.preco)) {
           ativo.cotacao = fmt2.format(info.preco);
-          ativo.cotacaoAtualizadaEm = info.atualizadoEm;
+          ativo.cotacaoAtualizadaEm = typeof info.atualizadoEm === 'string' ? info.atualizadoEm : new Date().toISOString();
         }
-        if (info.nome && !ativo.nome) ativo.nome = info.nome;
-        if (info.setor && !ativo.setor) ativo.setor = info.setor;
+        if (typeof info.nome === 'string' && info.nome && !ativo.nome) ativo.nome = info.nome;
+        if (typeof info.setor === 'string' && info.setor && !ativo.setor) ativo.setor = info.setor;
         // LPA e DPA só entram se o campo ainda estiver vazio: premissa sua nunca é sobrescrita.
-        if (info.lpa !== null && ativo.modo === 'lpa' && !String(ativo.lpaInformado || '').trim()) {
+        if (finito(info.lpa) && ativo.modo === 'lpa' && !String(ativo.lpaInformado || '').trim()) {
           ativo.lpaInformado = fmt2.format(info.lpa);
         }
-        if (info.dpa12m !== null && ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
+        if (positivo(info.dpa12m) && ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
           ativo.dpaInformado = fmt2.format(info.dpa12m);
         }
       });
