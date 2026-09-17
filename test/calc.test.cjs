@@ -172,6 +172,31 @@ teste('modo lucro continua sendo o padrão quando modo vem vazio', () => {
   perto(m.lpa, 2, 0.001);
 });
 
+teste('payout padrão preenche as linhas sem payout próprio', () => {
+  const cfg2 = { yieldPadrao: 6, payoutPadrao: 50, margemMinima: 0 };
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 4 }, cfg2);
+  perto(m.dpa, 2, 0.001);
+  perto(m.precoTeto, 33.33, 0.01);
+  assert.equal(m.payoutDoPadrao, true);
+  assert.equal(m.veredito, 'sim');
+  assert.deepEqual(m.faltando, []);
+});
+teste('payout da linha vence o padrão', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 4, payout: 80 }, { yieldPadrao: 6, payoutPadrao: 50 });
+  perto(m.dpa, 3.2, 0.001);
+  assert.equal(m.payoutDoPadrao, false);
+});
+teste('sem payout na linha e sem padrão, segue faltando', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 4 }, { yieldPadrao: 6 });
+  assert.deepEqual(m.faltando, ['payout']);
+});
+teste('payout zero na linha é respeitado (não cai no padrão)', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 4, payout: 0 }, { yieldPadrao: 6, payoutPadrao: 50 });
+  assert.equal(m.dpa, 0);
+  assert.equal(m.precoTeto, null, 'payout 0 não gera preço-teto');
+  assert.deepEqual(m.faltando, ['lucro positivo']);
+});
+
 console.log('avaliarCarteira');
 teste('resumo conta SIM, NÃO e incompletos', () => {
   const { resumo } = avaliarCarteira(

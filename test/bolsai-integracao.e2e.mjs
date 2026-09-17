@@ -5,8 +5,8 @@
  *   npm i -D playwright-core && node test/bolsai-integracao.e2e.mjs
  */
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { subirServidor } from './ajuda.mjs';
 import { existsSync, globSync } from 'node:fs';
 
 let chromium;
@@ -55,24 +55,11 @@ const bolsai = createServer((pedido, resposta) => {
 bolsai.listen(0);
 await once(bolsai, 'listening');
 
-const porta = 8907;
-const servidor = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(porta), '--token', 'TOKEN-BRAPI'], {
-  cwd: new URL('..', import.meta.url).pathname,
-  env: {
-    ...process.env,
-    BRAPI_BASE: `http://127.0.0.1:${brapi.address().port}/api/quote/`,
-    BOLSAI_BASE: `http://127.0.0.1:${bolsai.address().port}/api/v1`,
-    BOLSAI_KEY: CHAVE_BOLSAI,
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
+const { porta, processo: servidor, log } = await subirServidor(['--token', 'TOKEN-BRAPI'], {
+  BRAPI_BASE: `http://127.0.0.1:${brapi.address().port}/api/quote/`,
+  BOLSAI_BASE: `http://127.0.0.1:${bolsai.address().port}/api/v1`,
+  BOLSAI_KEY: CHAVE_BOLSAI,
 });
-const log = [];
-servidor.stdout.on('data', (d) => log.push(String(d)));
-servidor.stderr.on('data', (d) => log.push(String(d)));
-for (let i = 0; i < 60; i++) {
-  try { if ((await fetch(`http://127.0.0.1:${porta}/api/health`)).ok) break; } catch {}
-  await new Promise((r) => setTimeout(r, 100));
-}
 
 const browser = await chromium.launch({ executablePath: acharChromium() });
 const page = await browser.newPage({ viewport: { width: 1480, height: 900 } });

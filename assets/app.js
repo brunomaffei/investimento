@@ -142,7 +142,7 @@
     const qtd = modo === 'lucro' ? inputCelula(ativo, 'quantidadeAcoes', 'placeholder="ex.: 3 bi"') : vazio;
     const payout = modo === 'dividendo'
       ? `<span data-saida="payoutImplicito">${m.payoutImplicito !== null ? `${fmt2.format(m.payoutImplicito)}%` : vazio}</span>`
-      : inputCelula(ativo, 'payout', 'placeholder="ex.: 70"');
+      : inputCelula(ativo, 'payout', `placeholder="${escapar(parseNumero(estado.config.payoutPadrao) ?? 'ex.: 70')}"`);
     const lpa = modo === 'lpa'
       ? inputCelula(ativo, 'lpaInformado', 'placeholder="ex.: 3,67"')
       : `<span data-saida="lpa">${fmtMoeda(m.lpa)}</span>`;
@@ -467,11 +467,13 @@
 
   function sincronizarConfig() {
     el('#yield-padrao').value = estado.config.yieldPadrao ?? '';
+    el('#payout-padrao').value = estado.config.payoutPadrao ?? '';
     el('#margem-minima').value = estado.config.margemMinima ?? '';
     el('#token').value = estado.config.token ?? '';
     el('#busca').value = estado.config.busca ?? '';
     el('#somente-comprar').checked = !!estado.config.somenteComprar;
     el('#fundamentos').checked = !!estado.config.fundamentos;
+    el('#auto-atualizar').checked = estado.config.autoAtualizar !== false;
   }
 
   function ligarEventos() {
@@ -547,9 +549,14 @@
       status('Carteira restaurada para a lista inicial.', '');
     });
 
-    ['yield-padrao', 'margem-minima'].forEach((id) => {
+    const camposDeConfig = {
+      'yield-padrao': 'yieldPadrao',
+      'payout-padrao': 'payoutPadrao',
+      'margem-minima': 'margemMinima',
+    };
+    Object.entries(camposDeConfig).forEach(([id, chave]) => {
       el(`#${id}`).addEventListener('input', (evento) => {
-        estado.config[id === 'yield-padrao' ? 'yieldPadrao' : 'margemMinima'] = evento.target.value;
+        estado.config[chave] = evento.target.value;
         render();
       });
     });
@@ -569,9 +576,28 @@
       estado.config.fundamentos = evento.target.checked;
       salvar();
     });
+    el('#auto-atualizar').addEventListener('change', (evento) => {
+      estado.config.autoAtualizar = evento.target.checked;
+      salvar();
+    });
+  }
+
+  /**
+   * Atualiza sozinho ao abrir, para a tabela já aparecer com preço de hoje.
+   * Só roda quando há por onde consultar (servidor local ou token) e quando há
+   * ticker válido — assim a página publicada não tenta e falha a cada abertura.
+   */
+  async function atualizarAoAbrir() {
+    if (estado.config.autoAtualizar === false) return;
+    const temTicker = estado.ativos.some((a) => TICKER_B3.test(String(a.ticker || '').trim().toUpperCase()));
+    if (!temTicker) return;
+    const local = await servidor();
+    if (!local.disponivel && !String(estado.config.token || '').trim()) return;
+    await atualizarCotacoes();
   }
 
   sincronizarConfig();
   ligarEventos();
   render();
+  atualizarAoAbrir();
 })();

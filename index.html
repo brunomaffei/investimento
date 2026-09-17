@@ -31,6 +31,10 @@
     <input id="yield-padrao" inputmode="decimal" placeholder="6">
     <small>Usado quando a linha não tem yield próprio. 6% é o corte clássico do Bazin.</small>
   </label>
+  <label>Payout padrão (%)
+    <input id="payout-padrao" inputmode="decimal" placeholder="ex.: 50">
+    <small>Usado nas linhas sem payout próprio, para a carteira já calcular. Continua sendo premissa sua.</small>
+  </label>
   <label>Margem de segurança mínima (%)
     <input id="margem-minima" inputmode="decimal" placeholder="0">
     <small>Só marca SIM se o desconto for pelo menos isso. 0% = compra a qualquer preço abaixo do teto.</small>
@@ -43,6 +47,7 @@
   <label class="busca">Buscar
     <input id="busca" placeholder="ticker, nome ou setor">
     <span class="check"><input type="checkbox" id="somente-comprar"> mostrar só os SIM</span>
+    <span class="check"><input type="checkbox" id="auto-atualizar"> atualizar ao abrir</span>
   </label>
 </section>
 

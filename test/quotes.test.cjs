@@ -167,9 +167,10 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     const etapas = await diagnosticar({ token: 'segredo', tickers: ['BBAS3'], fetchImpl: http });
     assert.deepEqual(
       etapas.map((e) => e.chave),
-      ['rede', 'url', 'header', 'fundamentos', 'v2-quote', 'v2-fundamentos'],
+      ['rede', 'url', 'header', 'fundamentos', 'lpa-raiz', 'v2-quote', 'v2-fundamentos', 'v2-profile'],
     );
-    assert.match(interpretar(etapas), /[Tt]udo ok/);
+    // Com tudo liberado, a conclusão reporta sucesso e diz por onde o token passou.
+    assert.match(interpretar(etapas), /token aceito na URL/);
   });
 
   await teste('fundamentos são testados num ticker da carteira, não em PETR4', async () => {
@@ -184,7 +185,33 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
     const etapas = await diagnosticar({ token: 'segredo', tickers: ['PETR4'], fetchImpl: http });
     assert.equal(etapas.find((e) => e.chave === 'fundamentos').tickerLivre, true);
-    assert.match(interpretar(etapas), /NÃO prova/);
+    assert.equal(etapas.find((e) => e.chave === 'lpa-raiz').tickerLivre, true);
+    assert.match(interpretar(etapas), /libera de graça/);
+  });
+
+  await teste('LPA na raiz de um ticker próprio dispensa bolsai e plano pago', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('modules=') || u.includes('/v2/stocks/fundamentals'), responde: () => ({ ok: false, status: 403 }) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'BBAS3', regularMarketPrice: 22.1, earningsPerShare: 8.55 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 't', tickers: ['BBAS3'], fetchImpl: http });
+    const raiz = etapas.find((e) => e.chave === 'lpa-raiz');
+    assert.equal(raiz.lpa, 8.55, 'earningsPerShare da raiz precisa ser lido');
+    assert.equal(raiz.tickerLivre, false);
+    assert.match(interpretar(etapas), /sem bolsai e sem plano pago/);
+  });
+
+  await teste('sonda v2 lê outra chave de coleção e não inventa LPA zero', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('/v2/stocks/fundamentals'), responde: () => ({ ok: false, status: 404 }) },
+      { quando: (u) => u.includes('/v2/stocks/'), responde: () => ({ ok: true, status: 200, json: async () => ({ stocks: [{ symbol: 'BBAS3', close: 22.1 }] }) }) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'BBAS3', regularMarketPrice: 22.1 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 't', tickers: ['BBAS3'], fetchImpl: http });
+    const v2 = etapas.find((e) => e.chave === 'v2-quote');
+    assert.equal(v2.preco, 22.1, 'preço da v2 vem da chave "stocks" e do campo "close"');
+    assert.equal(v2.lpa, null, 'sem LPA na resposta, o campo fica nulo (não zero)');
+    assert.match(etapas.find((e) => e.chave === 'v2-fundamentos').detalhe, /rota não existe/);
   });
 
   await teste('o token nunca aparece em texto no resultado', async () => {

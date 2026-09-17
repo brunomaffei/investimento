@@ -78,11 +78,12 @@
   /**
    * Avalia um ativo e devolve as métricas derivadas.
    * @param {object} ativo   Premissas do ativo (ver seed.js para o formato).
-   * @param {object} config  { yieldPadrao, margemMinima } em pontos percentuais.
+   * @param {object} config  { yieldPadrao, payoutPadrao, margemMinima } em pontos percentuais.
    */
   function avaliarAtivo(ativo, config) {
     const cfg = config || {};
     const yieldPadrao = parseNumero(cfg.yieldPadrao);
+    const payoutPadrao = parseNumero(cfg.payoutPadrao);
     const margemMinima = parseNumero(cfg.margemMinima) || 0;
 
     const cotacao = positivo(parseNumero(ativo.cotacao));
@@ -91,7 +92,9 @@
 
     const lucro = parseNumero(ativo.lucroProjetado);
     const quantidade = positivo(parseNumero(ativo.quantidadeAcoes));
-    const payout = parseNumero(ativo.payout);
+    // Payout da linha, ou o padrão da carteira: é premissa sua nos dois casos.
+    const payoutDaLinha = parseNumero(ativo.payout);
+    const payout = payoutDaLinha !== null ? payoutDaLinha : payoutPadrao;
 
     let lpa = modo === 'lpa'
       ? parseNumero(ativo.lpaInformado)
@@ -144,6 +147,8 @@
       margem,
       precoAlvo,
       yieldAtual,
+      payout,
+      payoutDoPadrao: payoutDaLinha === null && payout !== null,
       payoutImplicito,
       veredito,
       faltando,

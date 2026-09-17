@@ -45,15 +45,27 @@ Enquanto faltar premissa, o selo da última coluna diz **qual** campo preencher
 mostra a versão servida (`código <sha> · <branch>`), que é a forma rápida de
 confirmar se o `git pull` pegou.
 
+### Abrir já é atualizar
+
+Com o app servido por `npm start` (ou com token no campo), abrir a página dispara a
+atualização sozinha — a tabela aparece com o preço de hoje, sem clique. A caixa
+**atualizar ao abrir** desliga esse comportamento, e a página publicada nunca tenta
+(sem servidor e sem token, não há por onde consultar).
+
+Para a carteira fechar a conta de uma vez, use o **payout padrão**: ele vale nas
+linhas sem payout próprio, do mesmo jeito que o yield aceitável padrão. Preço e LPA
+vêm da API, o payout vem desse campo, e todas as linhas passam a ter preço-teto e
+veredito. Continua sendo premissa sua — só deixou de ser uma premissa por linha.
+
 ### O que a atualização automática traz — e o que não traz
 
 | Campo | Vem sozinho? |
 | --- | --- |
 | Cotação | ✅ sempre |
 | Nome e setor | ✅ sempre |
-| LPA | ✅ com `BOLSAI_KEY` e a caixa marcada (senão exige plano pago na brapi) |
+| LPA | ✅ quando a brapi devolve `earningsPerShare` na resposta comum (acontece sem plano pago); senão, com `BOLSAI_KEY` |
 | DPA de 12 meses | ✅ mesma condição |
-| Payout | ❌ nunca — é premissa sua |
+| Payout | ❌ nunca vem de API — mas o **payout padrão** preenche todas as linhas de uma vez |
 | Lucro projetado e nº de ações | ❌ nunca — premissa sua |
 
 Ou seja: depois de atualizar as cotações, as linhas continuam em `falta payout`
@@ -237,8 +249,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 94 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 77 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 100 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 86 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

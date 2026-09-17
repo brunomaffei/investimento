@@ -146,12 +146,23 @@
             const motivos = Object.values(corpo?.erros || {});
             if (!info && motivos.length) etapa.detalhe = motivos[0];
           } else {
-            const primeiro = corpo && Array.isArray(corpo.results) ? corpo.results[0] : null;
-            etapa.preco = primeiro ? Number(primeiro.regularMarketPrice) || null : null;
-            etapa.lpa = primeiro?.defaultKeyStatistics?.trailingEps ?? null;
+            // A v1 devolve {results}, a v2 pode usar outra chave: pega o primeiro array.
+            const lista = Array.isArray(corpo?.results) ? corpo.results
+              : Array.isArray(corpo) ? corpo
+              : Object.values(corpo || {}).find(Array.isArray) || [];
+            const primeiro = lista[0] || null;
+            etapa.preco = primeiro ? Number(primeiro.regularMarketPrice ?? primeiro.close ?? primeiro.price) || null : null;
+            // Mesma leitura de normalizar(): earningsPerShare vem na raiz, sem módulo pago.
+            const bruto = primeiro?.defaultKeyStatistics?.trailingEps ?? primeiro?.earningsPerShare;
+            // Atenção: Number(null) é 0, o que mostraria "LPA 0,00" onde não há LPA.
+            const lpa = bruto === null || bruto === undefined ? null : Number(bruto);
+            etapa.lpa = Number.isFinite(lpa) ? lpa : null;
+            if (primeiro) etapa.campos = Object.keys(primeiro).length;
           }
         } else {
-          etapa.detalhe = mensagemDeErro(resposta.status);
+          etapa.detalhe = chave.startsWith('v2-') && resposta.status === 404
+            ? 'Essa rota não existe nessa versão da API.'
+            : mensagemDeErro(resposta.status);
         }
         etapas.push(etapa);
       } catch (erro) {
@@ -195,10 +206,16 @@
       );
       etapas[etapas.length - 1].tickerLivre = LIVRES.includes(ticker);
 
+      // A v1 devolve earningsPerShare na raiz em alguns tickers, sem módulo pago:
+      // se vier para um ticker seu, o LPA é automático sem bolsai e sem plano pago.
+      await executar(`LPA na raiz (sem módulos) em ${ticker}`, 'lpa-raiz', `${BASE}${ticker}?token=${seguro}`);
+      etapas[etapas.length - 1].tickerLivre = LIVRES.includes(ticker);
+
       // Sondagem da API v2: se ela servir fundamentos no seu plano, o app pode migrar.
       const v2 = paraV2(base);
       await executar(`v2: cotação de ${ticker}`, 'v2-quote', `${v2}/quote?symbols=${ticker}&token=${seguro}`);
       await executar(`v2: fundamentos de ${ticker}`, 'v2-fundamentos', `${v2}/fundamentals?symbols=${ticker}&token=${seguro}`);
+      await executar(`v2: perfil de ${ticker}`, 'v2-profile', `${v2}/profile?symbols=${ticker}&token=${seguro}`);
     }
     return etapas;
   }
@@ -255,6 +272,15 @@
       const via = url?.ok ? 'na URL' : 'no header Authorization';
       const fundamentos = achar('fundamentos');
       const v2Fund = achar('v2-fundamentos');
+      const raiz = achar('lpa-raiz');
+      // Em PETR4/MGLU3/VALE3/ITUB4 tudo é liberado: só vale como prova fora deles.
+      if (raiz?.ok && raiz.lpa !== null && !raiz.tickerLivre) {
+        const emQual = raiz.rotulo?.split(' em ')[1] || 'seu ticker';
+        return `Rede e token ok (token aceito ${via}). E a melhor notícia: a brapi devolveu o LPA de ${emQual} na resposta comum (LPA ${raiz.lpa}), sem módulo pago — o app preenche o LPA sozinho, sem bolsai e sem plano pago.`;
+      }
+      if (raiz?.ok && raiz.lpa !== null && raiz.tickerLivre) {
+        return `Rede e token ok (token aceito ${via}). O LPA veio na resposta comum, mas só em ${raiz.rotulo?.split(' em ')[1] || 'PETR4'}, que a brapi libera de graça — acrescente um ticker seu à lista e teste de novo para saber se vale para os demais.`;
+      }
       // A v2 pode servir no plano em que a v1 recusa: essa informação vem primeiro.
       if (fundamentos && !fundamentos.ok && v2Fund?.ok) {
         return `Rede e token ok (token aceito ${via}). Os fundamentos da API v1 foram recusados (HTTP ${fundamentos.status}), mas a rota v2 respondeu — vale migrar o app para /api/v2/stocks/fundamentals. Me mande esta linha do diagnóstico.`;

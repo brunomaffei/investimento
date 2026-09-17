@@ -10,6 +10,8 @@
     token: '',
     // Fundamentos (LPA e dividendos) são de plano pago na brapi; desligado por padrão.
     fundamentos: false,
+    // Busca cotações sozinho ao abrir, quando há servidor local ou token.
+    autoAtualizar: true,
     ordenarPor: 'margem',
     ordemDecrescente: true,
     somenteComprar: false,

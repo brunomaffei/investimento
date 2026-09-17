@@ -185,7 +185,9 @@ const servidor = createServer(async (pedido, resposta) => {
 });
 
 servidor.listen(porta, () => {
-  console.log(`Preço-teto no ar: http://localhost:${porta}`);
+  // Porta real: com --porta 0 o sistema escolhe uma livre (usado pelos testes).
+  const escolhida = servidor.address().port;
+  console.log(`Preço-teto no ar: http://localhost:${escolhida}`);
   if (versao?.sha) console.log(`Versão servida: ${versao.sha}${versao.branch ? ` (${versao.branch})` : ''}`);
   console.log(chaveBolsai
     ? 'Fundamentos (LPA e proventos) pela bolsai: chave carregada.'

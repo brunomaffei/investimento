@@ -6,8 +6,8 @@
  *   npm i -D playwright-core && node test/servidor-ui.e2e.mjs
  */
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { subirServidor } from './ajuda.mjs';
 import { existsSync, globSync } from 'node:fs';
 
 let chromium;
@@ -34,6 +34,7 @@ const brapiFalso = createServer((pedido, resposta) => {
   resposta.writeHead(200, { 'Content-Type': 'application/json' });
   resposta.end(JSON.stringify({ results: tickers.map((t) => ({
     symbol: t, regularMarketPrice: 27.31, longName: `${t} Participações`,
+    earningsPerShare: 5.5, // a v1 devolve o LPA na raiz, sem módulo pago
     summaryProfile: { sector: 'Finance' },
   })) }));
 });
@@ -41,16 +42,7 @@ brapiFalso.listen(0);
 await once(brapiFalso, 'listening');
 const baseFalsa = `http://127.0.0.1:${brapiFalso.address().port}/api/quote/`;
 
-const porta = 8901;
-const servidor = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(porta), '--token', 'TOKEN-SECRETO'], {
-  cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, BRAPI_BASE: baseFalsa },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-for (let i = 0; i < 60; i++) {
-  try { if ((await fetch(`http://127.0.0.1:${porta}/api/health`)).ok) break; } catch {}
-  await new Promise((r) => setTimeout(r, 100));
-}
+const { porta, processo: servidor } = await subirServidor(['--token', 'TOKEN-SECRETO'], { BRAPI_BASE: baseFalsa });
 
 let servidorSemToken = null;
 const browser = await chromium.launch({ executablePath: acharChromium() });
@@ -65,6 +57,35 @@ try {
 
   // Nenhum token digitado no navegador: quem tem o token é o servidor.
   ok((await page.inputValue('#token')) === '', 'navegador não precisa do token');
+
+  // Atualização automática ao abrir: ninguém clicou em nada ainda
+  await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+  ok(true, 'atualizou sozinho ao abrir, sem clique');
+  ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'cotação já preenchida na abertura');
+  ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '5,50', 'LPA da raiz da resposta preenchido sem plano pago');
+  ok((await page.locator('#resumo .card.alerta strong').innerText()) === '6', 'faltam só os payouts (6 ativos)');
+
+  // Um payout padrão fecha a conta de todas as linhas de uma vez
+  await page.fill('#payout-padrao', '50');
+  await page.fill('#yield-padrao', '6');
+  await page.fill('#margem-minima', '0');
+  await page.waitForTimeout(150);
+  ok((await page.locator('#resumo .card.alerta strong').innerText()) === '0', 'com payout padrão, nenhuma premissa fica faltando');
+  const tetoBB = (await linha('BBAS3').locator('[data-saida="precoTeto"]').innerText()).trim();
+  ok(tetoBB.startsWith('R$ 45,83'), `preço-teto de todos calculado: 5,50 x 50% / 6% = "${tetoBB}"`);
+  // 7 = os 6 tickers + a linha EXEMPLO, que já vinha com payout próprio.
+  ok((await page.locator('#resumo .card.ok strong').innerText()) === '7', 'todas as linhas passam a ter veredito');
+  await page.fill('#payout-padrao', '');
+
+  // Desligando a caixa, uma nova abertura não consulta nada
+  await page.uncheck('#auto-atualizar');
+  const antes = (await (await fetch(`http://127.0.0.1:${porta}/api/health`)).json()) && true;
+  await page.reload();
+  await page.waitForSelector('#tabela tbody tr');
+  await page.waitForTimeout(600);
+  ok((await page.locator('#status').innerText()).trim() === '', 'com "atualizar ao abrir" desmarcado, nada é consultado');
+  ok(antes, 'servidor segue respondendo');
+  await page.check('#auto-atualizar');
 
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
@@ -92,16 +113,9 @@ try {
 
   // ---- Fase 2: servidor SEM BRAPI_TOKEN e token digitado na tela ----------
   console.log('  -- servidor sem BRAPI_TOKEN, token digitado no app');
-  const portaSemToken = 8903;
-  servidorSemToken = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(portaSemToken)], {
-    cwd: new URL('..', import.meta.url).pathname,
-    env: { ...process.env, BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`http://127.0.0.1:${portaSemToken}/api/health`)).ok) break; } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  const semToken = await subirServidor([], { BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' });
+  const portaSemToken = semToken.porta;
+  servidorSemToken = semToken.processo;
 
   const p2 = await browser.newPage({ viewport: { width: 1480, height: 900 } });
   const erros2 = [];

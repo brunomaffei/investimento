@@ -4,9 +4,9 @@
  * então nada aqui depende de internet.
  */
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { subirServidor } from './ajuda.mjs';
 
 let falhas = 0;
 async function teste(nome, fn) {
@@ -47,41 +47,11 @@ const baseFalsa = `http://127.0.0.1:${brapiFalso.address().port}/api/quote/`;
 
 // ---- servidor do app -------------------------------------------------------
 const TOKEN = 'TOKEN-SUPER-SECRETO';
-const porta = 8899;
-const servidor = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(porta), '--token', TOKEN], {
-  cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, BRAPI_BASE: baseFalsa },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-const saida = [];
-servidor.stdout.on('data', (d) => saida.push(String(d)));
-servidor.stderr.on('data', (d) => saida.push(String(d)));
-
-const esperarServidor = async () => {
-  for (let i = 0; i < 60; i++) {
-    try {
-      const r = await fetch(`http://127.0.0.1:${porta}/api/health`);
-      if (r.ok) return;
-    } catch { /* ainda subindo */ }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`servidor não subiu. Saída: ${saida.join('')}`);
-};
-await esperarServidor();
+const { porta, processo: servidor } = await subirServidor(['--token', TOKEN], { BRAPI_BASE: baseFalsa });
 
 // Segundo servidor, sem token nenhum: reproduz o `npm start` sem BRAPI_TOKEN.
-const portaSemToken = 8900;
-const servidorSemToken = spawn(process.execPath, ['tools/servidor.mjs', '--porta', String(portaSemToken)], {
-  cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-const logSemToken = [];
-servidorSemToken.stdout.on('data', (d) => logSemToken.push(String(d)));
-for (let i = 0; i < 60; i++) {
-  try { if ((await fetch(`http://127.0.0.1:${portaSemToken}/api/health`)).ok) break; } catch {}
-  await new Promise((r) => setTimeout(r, 100));
-}
+const { porta: portaSemToken, processo: servidorSemToken, log: logSemToken } =
+  await subirServidor([], { BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' });
 
 const url = (caminho) => `http://127.0.0.1:${porta}${caminho}`;
 const urlSemToken = (caminho) => `http://127.0.0.1:${portaSemToken}${caminho}`;
