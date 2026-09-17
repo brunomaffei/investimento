@@ -155,6 +155,29 @@ ok((await linha('ITSA4').locator('input[data-campo="lpaInformado"]').inputValue(
 ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '8,00', 'LPA digitado por mim NÃO foi sobrescrito');
 ok((await linha('ITSA4').locator('.sub').innerText()).includes('Utilities'), 'setor preenchido pela API');
 
+// Diagnóstico de conexão: rede bloqueada pelo navegador
+await page.fill('#token', 'meu-token-de-teste');
+await page.unroute('**/brapi.dev/**');
+await page.route('**/brapi.dev/**', (r) => r.abort('failed'));
+await page.click('#btn-diagnostico');
+await page.waitForSelector('#diagnostico .conclusao', { timeout: 15000 });
+const bloqueio = await page.locator('#diagnostico .conclusao').innerText();
+ok(/bloqueou|permissão de rede/i.test(bloqueio), `diagnóstico identifica bloqueio: "${bloqueio.slice(0, 60)}…"`);
+ok((await page.locator('#diagnostico li').count()) >= 1, 'diagnóstico lista as etapas testadas');
+
+// Diagnóstico com plano sem fundamentos
+await page.unroute('**/brapi.dev/**');
+await page.route('**/brapi.dev/**', (r) => {
+  if (r.request().url().includes('modules=')) return r.fulfill({ status: 403, body: '{}' });
+  return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    results: [{ symbol: 'PETR4', regularMarketPrice: 31.9 }] }) });
+});
+await page.click('#btn-diagnostico');
+await page.waitForFunction(() => /fundamentos|ok/i.test(document.querySelector('#diagnostico .conclusao')?.textContent || ''), null, { timeout: 15000 });
+const conclusao = await page.locator('#diagnostico .conclusao').innerText();
+ok(/não cobre fundamentos/i.test(conclusao), `diagnóstico aponta limitação de plano: "${conclusao.slice(0, 70)}…"`);
+ok(!conclusao.includes('meu-token'), 'token não aparece no relatório');
+
 // Exportações não lançam erro
 const csv = await page.evaluate(() => { document.querySelector('#btn-csv').click(); return document.querySelector('#status').textContent; });
 ok(csv.includes('CSV'), 'exportação CSV disparada');

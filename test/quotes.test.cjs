@@ -15,16 +15,18 @@ async function teste(nome, fn) {
 /** fetch falso que registra as URLs chamadas e responde conforme as regras passadas. */
 function fetchFalso(regras) {
   const chamadas = [];
-  const impl = async (url) => {
+  const impl = async (url, opcoes = {}) => {
     chamadas.push(url);
     for (const regra of regras) {
-      if (regra.quando(url)) return regra.responde(url);
+      if (regra.quando(url, opcoes)) return regra.responde(url, opcoes);
     }
     return { ok: true, json: async () => ({ results: [] }) };
   };
   impl.chamadas = chamadas;
   return impl;
 }
+
+const temBearer = (_url, opcoes) => !!opcoes?.headers?.Authorization;
 
 const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
 
@@ -70,6 +72,25 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     assert.equal(http.chamadas.length, 3); // 10 + 10 + 3
     assert.equal(Object.keys(dados).length, 23);
     assert.deepEqual(erros, {});
+  });
+
+  await teste('token recusado na URL é reenviado no header Authorization', async () => {
+    const http = fetchFalso([
+      { quando: (u, o) => temBearer(u, o), responde: () => resposta([{ symbol: 'BBSE3', regularMarketPrice: 38.5 }]) },
+      { quando: (u) => u.includes('token='), responde: () => ({ ok: false, status: 401 }) },
+    ]);
+    const { dados, erros, avisos } = await buscarCotacoes(['BBSE3'], { token: 'abc', fetchImpl: http });
+    assert.equal(http.chamadas.length, 2, 'primeiro pela URL, depois pelo header');
+    assert.equal(dados.BBSE3.preco, 38.5);
+    assert.deepEqual(erros, {});
+    assert.match(avisos[0], /header Authorization/);
+  });
+
+  await teste('sem token, um 401 não gera segunda tentativa', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => ({ ok: false, status: 401 }) }]);
+    const { erros } = await buscarCotacoes(['BBSE3'], { fetchImpl: http });
+    assert.equal(http.chamadas.length, 1);
+    assert.match(erros.BBSE3, /[Tt]oken/);
   });
 
   console.log('buscarCotacoes — planos e falhas');
@@ -126,6 +147,61 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     const { dados, erros } = await buscarCotacoes(['VIVT3', 'XXXX9'], { fetchImpl: http });
     assert.equal(dados.VIVT3.preco, 25);
     assert.match(erros.XXXX9, /[Ss]em retorno/);
+  });
+
+  console.log('diagnóstico');
+
+  const { diagnosticar, interpretar } = require('../assets/quotes.js');
+
+  await teste('sem token, roda só o teste de rede', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31 }]) }]);
+    const etapas = await diagnosticar({ fetchImpl: http });
+    assert.equal(etapas.length, 1);
+    assert.equal(etapas[0].chave, 'rede');
+    assert.equal(etapas[0].preco, 31);
+    assert.match(interpretar(etapas), /rede está ok/i);
+  });
+
+  await teste('com token, testa URL, header e fundamentos', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
+    const etapas = await diagnosticar({ token: 'segredo', fetchImpl: http });
+    assert.deepEqual(etapas.map((e) => e.chave), ['rede', 'url', 'header', 'fundamentos']);
+    assert.match(interpretar(etapas), /[Tt]udo ok/);
+  });
+
+  await teste('o token nunca aparece em texto no resultado', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31 }]) }]);
+    const etapas = await diagnosticar({ token: 'SEGREDO123', fetchImpl: http });
+    assert.ok(!JSON.stringify(etapas).includes('SEGREDO123'), 'o token não deve vazar no relatório');
+    assert.ok(!interpretar(etapas).includes('SEGREDO123'));
+  });
+
+  await teste('bloqueio do navegador é identificado como tal', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => { throw new TypeError('Failed to fetch'); } }]);
+    const etapas = await diagnosticar({ token: 'x', fetchImpl: http });
+    assert.equal(etapas[0].bloqueado, true);
+    assert.match(interpretar(etapas), /bloqueou a chamada|permissão de rede/i);
+  });
+
+  await teste('token recusado na URL e no header é apontado', async () => {
+    const http = fetchFalso([
+      { quando: (u, o) => u.includes('token=') || temBearer(u, o), responde: () => ({ ok: false, status: 401 }) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 'errado', fetchImpl: http });
+    assert.equal(etapas.find((e) => e.chave === 'rede').ok, true, 'a rede em si funciona');
+    assert.equal(etapas.find((e) => e.chave === 'url').status, 401);
+    assert.equal(etapas.find((e) => e.chave === 'header').status, 401);
+    assert.match(interpretar(etapas), /recusado nas duas formas/);
+  });
+
+  await teste('plano sem fundamentos é diagnosticado', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 'bom', fetchImpl: http });
+    assert.match(interpretar(etapas), /não cobre fundamentos/);
   });
 
   console.log('normalizar e proventos');

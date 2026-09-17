@@ -3,7 +3,7 @@
   'use strict';
 
   const { parseNumero, avaliarCarteira, avaliarAtivo } = window.Calc;
-  const { buscarCotacoes } = window.Quotes;
+  const { buscarCotacoes, diagnosticar, interpretar } = window.Quotes;
   const { CONFIG_PADRAO, CARTEIRA_INICIAL } = window.Seed;
 
   const CHAVE_STORAGE = 'precoteto.v1';
@@ -315,6 +315,39 @@
     }
   }
 
+  async function rodarDiagnostico() {
+    const botao = el('#btn-diagnostico');
+    const painel = el('#diagnostico');
+    botao.disabled = true;
+    botao.textContent = 'Testando…';
+    painel.hidden = false;
+    painel.innerHTML = '<p class="rodando">Testando a conexão com a brapi…</p>';
+
+    try {
+      const etapas = await diagnosticar({ token: estado.config.token });
+      const linhas = etapas.map((e) => {
+        const marca = e.ok ? '✅' : e.bloqueado ? '🚫' : '❌';
+        const detalhe = e.ok
+          ? [e.preco !== null && e.preco !== undefined ? `preço R$ ${fmt2.format(e.preco)}` : null,
+             e.lpa !== null && e.lpa !== undefined ? `LPA ${fmt2.format(e.lpa)}` : null]
+            .filter(Boolean).join(', ') || 'respondeu sem dados'
+          : `${e.status ? `HTTP ${e.status}` : 'sem resposta'} — ${escapar(e.detalhe || '')}`;
+        return `<li>${marca} <strong>${escapar(e.rotulo)}</strong>: ${detalhe} <span class="ms">${e.ms} ms</span></li>`;
+      });
+      painel.innerHTML = `
+        <h2>Diagnóstico da conexão</h2>
+        <ul>${linhas.join('')}</ul>
+        <p class="conclusao">${escapar(interpretar(etapas))}</p>
+        ${estado.config.token ? '' : '<p class="dica">Sem token, só o teste de rede roda. Cole o token para testar a autenticação.</p>'}`;
+      status('Diagnóstico concluído.', '');
+    } catch (erro) {
+      painel.innerHTML = `<p class="conclusao">Não foi possível rodar o diagnóstico: ${escapar(erro.message)}</p>`;
+    } finally {
+      botao.disabled = false;
+      botao.textContent = '🔌 Testar conexão';
+    }
+  }
+
   function status(texto, tipo = '') {
     const alvo = el('#status');
     alvo.textContent = texto;
@@ -440,6 +473,7 @@
     });
 
     el('#btn-cotacoes').addEventListener('click', atualizarCotacoes);
+    el('#btn-diagnostico').addEventListener('click', rodarDiagnostico);
     el('#btn-json').addEventListener('click', exportarJson);
     el('#btn-csv').addEventListener('click', exportarCsv);
     el('#btn-importar').addEventListener('click', () => el('#arquivo').click());

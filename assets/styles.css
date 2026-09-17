@@ -122,6 +122,23 @@ button.perigo:hover { border-color: var(--vermelho); color: #ffb4b4; }
 .status.alerta { color: var(--ambar); }
 .status.erro { color: var(--vermelho); }
 
+.diagnostico {
+  max-width: 1600px;
+  margin: 0 auto 16px;
+  background: var(--fundo-painel);
+  border: 1px solid var(--borda);
+  border-left: 3px solid var(--acento);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+}
+.diagnostico h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-fraco); }
+.diagnostico ul { margin: 0; padding-left: 18px; }
+.diagnostico li { margin-bottom: 4px; }
+.diagnostico .ms { color: #5b6880; font-size: 11px; }
+.diagnostico .conclusao { margin: 10px 0 0; padding: 8px 10px; background: var(--fundo); border-radius: 6px; color: var(--texto); }
+.diagnostico .dica, .diagnostico .rodando { color: var(--texto-fraco); margin: 8px 0 0; }
+
 .tabela-wrap {
   max-width: 1600px;
   margin: 0 auto;
@@ -253,7 +270,24 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
 /* Celular: cada linha vira um cartão com os rótulos à esquerda. */
 @media (max-width: 860px) {
   body { padding: 16px 12px 48px; }
-  .tabela-wrap { border: none; background: transparent; overflow: visible; }
+  .diagnostico {
+  max-width: 1600px;
+  margin: 0 auto 16px;
+  background: var(--fundo-painel);
+  border: 1px solid var(--borda);
+  border-left: 3px solid var(--acento);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+}
+.diagnostico h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-fraco); }
+.diagnostico ul { margin: 0; padding-left: 18px; }
+.diagnostico li { margin-bottom: 4px; }
+.diagnostico .ms { color: #5b6880; font-size: 11px; }
+.diagnostico .conclusao { margin: 10px 0 0; padding: 8px 10px; background: var(--fundo); border-radius: 6px; color: var(--texto); }
+.diagnostico .dica, .diagnostico .rodando { color: var(--texto-fraco); margin: 8px 0 0; }
+
+.tabela-wrap { border: none; background: transparent; overflow: visible; }
   table, tbody, tr, td { display: block; width: 100%; }
   thead { display: none; }
   tbody tr {

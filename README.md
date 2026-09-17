@@ -86,6 +86,34 @@ node tools/atualizar-cotacoes.mjs carteira-preco-teto-2026-09-17.json --token SE
 
 Depois importe o arquivo de volta pelo botão **⬆ Importar**.
 
+## Não está atualizando? Rode o diagnóstico
+
+O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde parou
+(o token nunca aparece no relatório):
+
+| Etapa | O que isola |
+| --- | --- |
+| Rede: PETR4 sem token | se a chamada consegue sair do navegador |
+| Token na URL (`?token=`) | se o token é aceito como parâmetro |
+| Token no header (`Bearer`) | se o token é aceito como cabeçalho |
+| Fundamentos | se o plano cobre LPA e dividendos |
+
+Causas mais comuns, em ordem:
+
+1. **Página publicada (link do artifact) não tem permissão de rede.** As capacidades
+   de uma página publicada são `artifact`, `assets`, `comments`, `db`, `downloads`,
+   `mcp`, `room`, `sample`, `self` e `user` — **nenhuma delas é acesso HTTP livre**.
+   Se o diagnóstico mostrar 🚫 na primeira linha, é isso: use o `index.html` na sua
+   máquina, onde a chamada sai normalmente.
+2. **Forma de autenticação.** A brapi documenta `Authorization: Bearer SEU_TOKEN`,
+   mas o parâmetro `?token=` também funciona e não dispara preflight de CORS. O app
+   tenta a URL primeiro e, se levar 401, **repete a chamada com o header** — e avisa
+   qual caminho funcionou.
+3. **Plano sem fundamentos.** HTTP 403 só na quarta etapa: cotação atualiza, LPA e
+   dividendos não.
+4. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
+   `EXEMPLO` é ignorada de propósito.
+
 ## De onde vêm os dados "corretos"
 
 Cada coluna tem um grau diferente de disponibilidade pública:
@@ -115,8 +143,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 36 testes de cálculo e de integração (node puro, sem dependências)
-npm run test:ui   # 36 verificações na interface com Chromium (precisa de playwright-core)
+npm test          # 44 testes de cálculo e de integração (node puro, sem dependências)
+npm run test:ui   # 40 verificações na interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
