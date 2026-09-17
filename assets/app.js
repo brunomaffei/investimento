@@ -3,7 +3,7 @@
   'use strict';
 
   const { parseNumero, avaliarCarteira, avaliarAtivo } = window.Calc;
-  const { buscarCotacoes, diagnosticar, interpretar } = window.Quotes;
+  const { buscarCotacoes, buscarPeloServidor, servidorDisponivel, diagnosticar, interpretar } = window.Quotes;
   const { CONFIG_PADRAO, CARTEIRA_INICIAL } = window.Seed;
 
   const CHAVE_STORAGE = 'precoteto.v1';
@@ -260,6 +260,13 @@
 
   // ------------------------------------------------------------------ cotações
 
+  // Detecta uma única vez se o app está sendo servido por tools/servidor.mjs.
+  let temServidor = null;
+  async function usarServidor() {
+    if (temServidor === null) temServidor = await servidorDisponivel({});
+    return temServidor;
+  }
+
   async function atualizarCotacoes() {
     const botao = el('#btn-cotacoes');
     const tickers = estado.ativos.map((a) => String(a.ticker || '').trim().toUpperCase()).filter((t) => TICKER_B3.test(t));
@@ -270,13 +277,15 @@
 
     botao.disabled = true;
     botao.textContent = 'Buscando…';
-    status(`Consultando ${tickers.length} ticker(s) na brapi.dev…`);
+    const caminho = (await usarServidor()) ? ' (via servidor local)' : '';
+    status(`Consultando ${tickers.length} ticker(s) na brapi.dev${caminho}…`);
 
     try {
-      const { dados, erros, avisos } = await buscarCotacoes(tickers, {
-        token: estado.config.token,
-        fundamentos: !!estado.config.fundamentos,
-      });
+      const fundamentos = !!estado.config.fundamentos;
+      const pelaServidor = await usarServidor();
+      const { dados, erros, avisos } = pelaServidor
+        ? await buscarPeloServidor(tickers, { fundamentos })
+        : await buscarCotacoes(tickers, { token: estado.config.token, fundamentos });
       let atualizados = 0;
       estado.ativos.forEach((ativo) => {
         const info = dados[String(ativo.ticker || '').toUpperCase()];
@@ -302,7 +311,7 @@
       const extra = (avisos || []).join(' ');
       if (!listaErros.length) {
         const quando = new Date().toLocaleString('pt-BR');
-        status(`${atualizados} ativo(s) atualizados em ${quando}. ${extra}`.trim(), extra ? 'alerta' : 'ok');
+        status(`${atualizados} ativo(s) atualizados em ${quando}${caminho}. ${extra}`.trim(), extra ? 'alerta' : 'ok');
       } else {
         const resumoErros = [...new Set(listaErros.map(([, motivo]) => motivo))].join(' ');
         status(`${atualizados} atualizados. ${listaErros.length} com problema: ${resumoErros} ${extra}`.trim(), 'alerta');

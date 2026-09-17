@@ -3,9 +3,26 @@
 Ferramenta de uso próprio para responder, em poucos minutos por mês, uma pergunta só:
 **o preço de hoje está abaixo do preço máximo que eu aceito pagar por esse ativo?**
 
-Roda como página estática: sem servidor, sem build, sem dependência. Abra o
-`index.html` no navegador (duplo clique já funciona) e tudo fica salvo na
-própria máquina, no `localStorage`.
+Duas formas de rodar, sem build e sem dependência:
+
+```bash
+npm start   # http://localhost:8787 — recomendado: cotação automática funciona
+```
+
+ou abra o `index.html` direto no navegador (duplo clique), que faz tudo menos a
+busca automática de cotações. Em ambos os casos os dados ficam salvos na sua
+máquina, no `localStorage` do navegador.
+
+O `npm start` sobe `tools/servidor.mjs`, que entrega o app **e** consulta a brapi
+pelo lado do servidor. Isso existe por um motivo concreto: chamada à brapi feita
+de dentro do navegador é barrada por CORS quando a página vem de `file://` e
+também na página publicada como artifact, que não tem permissão de rede. Do
+servidor, a chamada sai normalmente — e o token fica na variável de ambiente, sem
+nunca chegar ao navegador:
+
+```bash
+BRAPI_TOKEN=seu_token npm start
+```
 
 ![Tela do app](docs/tela.png)
 
@@ -93,6 +110,7 @@ O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde paro
 
 | Etapa | O que isola |
 | --- | --- |
+| Servidor local | se o app está sendo servido por `npm start` (aí nem precisa do resto) |
 | Rede: PETR4 sem token | se a chamada consegue sair do navegador |
 | Token na URL (`?token=`) | se o token é aceito como parâmetro |
 | Token no header (`Bearer`) | se o token é aceito como cabeçalho |
@@ -100,11 +118,12 @@ O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde paro
 
 Causas mais comuns, em ordem:
 
-1. **Página publicada (link do artifact) não tem permissão de rede.** As capacidades
-   de uma página publicada são `artifact`, `assets`, `comments`, `db`, `downloads`,
-   `mcp`, `room`, `sample`, `self` e `user` — **nenhuma delas é acesso HTTP livre**.
-   Se o diagnóstico mostrar 🚫 na primeira linha, é isso: use o `index.html` na sua
-   máquina, onde a chamada sai normalmente.
+1. **🚫 na linha de rede: o navegador barrou a chamada antes de sair.** Acontece na
+   página publicada (as capacidades de um artifact são `artifact`, `assets`,
+   `comments`, `db`, `downloads`, `mcp`, `room`, `sample`, `self` e `user` —
+   **nenhuma é acesso HTTP livre**) e também com `file://`, quando o CORS da API
+   recusa a origem. **Solução:** `npm start` e abra `http://localhost:8787`; aí a
+   consulta sai do servidor e o app mostra "via servidor local" no status.
 2. **Forma de autenticação.** A brapi documenta `Authorization: Bearer SEU_TOKEN`,
    mas o parâmetro `?token=` também funciona e não dispara preflight de CORS. O app
    tenta a URL primeiro e, se levar 401, **repete a chamada com o header** — e avisa
@@ -143,8 +162,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 44 testes de cálculo e de integração (node puro, sem dependências)
-npm run test:ui   # 40 verificações na interface com Chromium (precisa de playwright-core)
+npm test          # 55 testes de cálculo, cotação e servidor (node puro, sem dependências)
+npm run test:ui   # 48 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -165,6 +184,7 @@ assets/quotes.js              integração com a brapi.dev
 assets/app.js                 tabela editável, ordenação, import/export
 assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
+tools/servidor.mjs            servidor local + proxy da brapi (npm start)
 tools/atualizar-cotacoes.mjs  atualizador de preços por linha de comando
 tools/captura.mjs             gera a captura de tela do README
 test/                         testes de cálculo, de cotação e de interface

@@ -54,6 +54,52 @@
     return `Sem conexão com a brapi (${erro.message}). Preencha a cotação à mão.`;
   }
 
+  const ASSINATURA_SERVIDOR = 'preco-teto';
+
+  /**
+   * O app pode ser servido por `tools/servidor.mjs`, que consulta a brapi do lado
+   * do servidor (sem CORS) e guarda o token fora do navegador. Detecta se esse
+   * servidor está atendendo nesta origem.
+   */
+  async function servidorDisponivel(opcoes) {
+    const { fetchImpl, base = '' } = opcoes || {};
+    const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    if (!http) return false;
+    // Em file:// não há servidor para consultar.
+    if (typeof location !== 'undefined' && !/^https?:$/.test(location.protocol)) return false;
+    try {
+      const resposta = await http(`${base}/api/health`, { headers: { Accept: 'application/json' } });
+      if (!resposta.ok) return false;
+      const corpo = await resposta.json();
+      return corpo && corpo.servico === ASSINATURA_SERVIDOR;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Busca as cotações através do servidor local, que devolve o mesmo formato. */
+  async function buscarPeloServidor(tickers, opcoes) {
+    const { fundamentos = false, fetchImpl, base = '' } = opcoes || {};
+    const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    if (!http) throw new Error('fetch indisponível neste ambiente.');
+    const limpos = [...new Set((tickers || []).map((t) => String(t || '').trim().toUpperCase()).filter(Boolean))];
+    if (!limpos.length) return { dados: {}, erros: {}, avisos: [] };
+
+    const params = new URLSearchParams({ tickers: limpos.join(',') });
+    if (fundamentos) params.set('fundamentos', '1');
+    const resposta = await http(`${base}/api/cotacoes?${params}`, { headers: { Accept: 'application/json' } });
+    if (!resposta.ok) {
+      const motivo = `O servidor local respondeu HTTP ${resposta.status}.`;
+      return { dados: {}, erros: Object.fromEntries(limpos.map((t) => [t, motivo])), avisos: [] };
+    }
+    const corpo = await resposta.json();
+    return {
+      dados: corpo.dados || {},
+      erros: corpo.erros || {},
+      avisos: corpo.avisos || [],
+    };
+  }
+
   /**
    * Roda uma bateria de chamadas para separar as causas possíveis de "não atualiza":
    * rede bloqueada, token recusado na URL, token recusado no header, plano sem
@@ -87,6 +133,9 @@
       }
     };
 
+    if (await servidorDisponivel({ fetchImpl: http })) {
+      await executar('Servidor local (sem CORS)', 'servidor', '/api/cotacoes?tickers=PETR4');
+    }
     // PETR4 é liberada pela brapi sem token: isola problema de rede de problema de token.
     await executar('Rede: PETR4 sem token', 'rede', `${BASE}PETR4`);
     if (token) {
@@ -101,10 +150,14 @@
   /** Traduz o resultado do diagnóstico em uma conclusão em português. */
   function interpretar(etapas) {
     const achar = (chave) => (etapas || []).find((e) => e.chave === chave);
+    const servidor = achar('servidor');
+    if (servidor?.ok) {
+      return 'O servidor local está respondendo e é por ele que as cotações passam — sem CORS e com o token fora do navegador.';
+    }
     const rede = achar('rede');
     if (!rede) return 'Diagnóstico não executado.';
     if (rede.bloqueado) {
-      return 'O navegador bloqueou a chamada antes de sair. É o caso típico da página publicada, que não tem permissão de rede: baixe o repositório e abra o index.html na sua máquina.';
+      return 'O navegador bloqueou a chamada antes de sair — é o caso da página publicada (sem permissão de rede) e também de abrir o arquivo por file:// quando o CORS recusa. Solução: rode `npm start` no repositório e abra http://localhost:8787, que consulta a brapi pelo servidor.';
     }
     if (!rede.ok && rede.status === 0) {
       return `Não houve resposta da brapi (${rede.detalhe || 'sem detalhe'}). Verifique sua conexão.`;
@@ -160,7 +213,7 @@
     };
   }
 
-  function montarUrl(lote, token, comFundamentos) {
+  function montarUrl(lote, token, comFundamentos, base) {
     const params = new URLSearchParams();
     if (comFundamentos) {
       params.set('modules', MODULOS);
@@ -168,17 +221,18 @@
     }
     if (token) params.set('token', token);
     const consulta = params.toString();
-    return `${BASE}${lote.join(',')}${consulta ? `?${consulta}` : ''}`;
+    return `${base || BASE}${lote.join(',')}${consulta ? `?${consulta}` : ''}`;
   }
 
   /**
    * @param {string[]} tickers
-   * @param {{token?: string, fundamentos?: boolean, fetchImpl?: Function}} opcoes
+   * @param {{token?: string, fundamentos?: boolean, fetchImpl?: Function, base?: string}} opcoes
    *   fundamentos: pede LPA/dividendos junto (exige plano pago, exceto nos tickers de teste).
+   *   base: sobrescreve a URL da brapi (usada pelo servidor local e pelos testes).
    * @returns {Promise<{dados: Object, erros: Object, avisos: string[]}>}
    */
   async function buscarCotacoes(tickers, opcoes) {
-    const { token, fetchImpl, fundamentos = false } = opcoes || {};
+    const { token, fetchImpl, fundamentos = false, base } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
 
@@ -190,7 +244,7 @@
     const pedir = async (lote, comFundamentos, viaHeader) => {
       const cabecalhos = { Accept: 'application/json' };
       if (viaHeader && token) cabecalhos.Authorization = `Bearer ${token}`;
-      const url = montarUrl(lote, viaHeader ? null : token, comFundamentos);
+      const url = montarUrl(lote, viaHeader ? null : token, comFundamentos, base);
       const resposta = await http(url, { headers: cabecalhos });
       if (!resposta.ok) return { status: resposta.status };
       const corpo = await resposta.json();
@@ -245,5 +299,9 @@
     return { dados, erros, avisos: [...avisos] };
   }
 
-  return { buscarCotacoes, diagnosticar, interpretar, somarProventos12m, normalizar, mensagemDeErro, motivoDeFalhaDeRede, LOTE };
+  return {
+    buscarCotacoes, buscarPeloServidor, servidorDisponivel, diagnosticar, interpretar,
+    somarProventos12m, normalizar, mensagemDeErro, motivoDeFalhaDeRede,
+    LOTE, BASE, ASSINATURA_SERVIDOR,
+  };
 });

@@ -4,8 +4,9 @@
   "description": "Calculadora de preço-teto (método Bazin) e margem de segurança para ações e FIIs da B3",
   "private": true,
   "scripts": {
-    "test": "node test/calc.test.cjs && node test/quotes.test.cjs",
-    "test:ui": "node test/interface.e2e.mjs"
+    "start": "node tools/servidor.mjs",
+    "test": "node test/calc.test.cjs && node test/quotes.test.cjs && node test/servidor.test.mjs",
+    "test:ui": "node test/interface.e2e.mjs && node test/servidor-ui.e2e.mjs"
   },
   "license": "MIT"
 }
