@@ -165,7 +165,10 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
   await teste('com token, testa URL, header e fundamentos', async () => {
     const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'BBAS3', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
     const etapas = await diagnosticar({ token: 'segredo', tickers: ['BBAS3'], fetchImpl: http });
-    assert.deepEqual(etapas.map((e) => e.chave), ['rede', 'url', 'header', 'fundamentos']);
+    assert.deepEqual(
+      etapas.map((e) => e.chave),
+      ['rede', 'url', 'header', 'fundamentos', 'v2-quote', 'v2-fundamentos'],
+    );
     assert.match(interpretar(etapas), /[Tt]udo ok/);
   });
 
@@ -224,13 +227,35 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     assert.match(conclusao, /403|não vêm no seu plano/, 'precisa dizer que o plano não cobre');
   });
 
-  await teste('plano sem fundamentos é diagnosticado', async () => {
+  await teste('plano sem fundamentos (v1 e v2 recusadas) é diagnosticado', async () => {
     const http = fetchFalso([
-      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: (u) => u.includes('modules=') || u.includes('/v2/stocks/fundamentals'), responde: () => ({ ok: false, status: 403 }) },
       { quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31 }]) },
     ]);
-    const etapas = await diagnosticar({ token: 'bom', fetchImpl: http });
-    assert.match(interpretar(etapas), /não cobre fundamentos/);
+    const etapas = await diagnosticar({ token: 'bom', tickers: ['BBAS3'], fetchImpl: http });
+    const conclusao = interpretar(etapas);
+    assert.match(conclusao, /não cobre fundamentos/);
+    assert.match(conclusao, /v2 também recusou/);
+    assert.match(conclusao, /BOLSAI_KEY/);
+  });
+
+  await teste('v1 recusada mas v2 liberada: recomenda migrar a rota', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: (u) => u.includes('/v2/stocks/fundamentals'), responde: () => resposta([{ symbol: 'BBAS3', defaultKeyStatistics: { trailingEps: 8.55 } }]) },
+      { quando: () => true, responde: () => resposta([{ symbol: 'BBAS3', regularMarketPrice: 22 }]) },
+    ]);
+    const etapas = await diagnosticar({ token: 'bom', tickers: ['BBAS3'], fetchImpl: http });
+    assert.match(interpretar(etapas), /v2 respondeu/);
+  });
+
+  await teste('a sonda v2 respeita a base informada (testável offline)', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([]) }]);
+    await diagnosticar({ token: 't', tickers: ['BBAS3'], base: 'http://local/api/quote/', fetchImpl: http });
+    assert.ok(
+      http.chamadas.some((u) => u.startsWith('http://local/api/v2/stocks/quote?symbols=BBAS3')),
+      `v2 deveria sair da base informada: ${http.chamadas.join(' | ')}`,
+    );
   });
 
   console.log('normalizar e proventos');

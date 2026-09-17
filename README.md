@@ -139,6 +139,7 @@ O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde paro
 | Token na URL (`?token=`) | se o token é aceito como parâmetro |
 | Token no header (`Bearer`) | se o token é aceito como cabeçalho |
 | Fundamentos | se o plano cobre LPA e dividendos — testado em **um ticker seu**, nunca em PETR4: a brapi libera PETR4/MGLU3/VALE3/ITUB4 por completo e o resultado daria falso positivo |
+| v2: cotação e fundamentos | a brapi também tem uma API v2 (`/api/v2/stocks/quote?symbols=…`), com rotas separadas. O app usa a v1; a sonda mostra o que a v2 serve no seu plano, porque o recorte pago pode ser diferente |
 
 Causas mais comuns, em ordem:
 
@@ -236,8 +237,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 92 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 75 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 94 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 77 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

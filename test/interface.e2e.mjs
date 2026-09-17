@@ -170,7 +170,9 @@ ok((await page.locator('#diagnostico li').count()) >= 1, 'diagnóstico lista as 
 // Diagnóstico com plano sem fundamentos
 await page.unroute('**/brapi.dev/**');
 await page.route('**/brapi.dev/**', (r) => {
-  if (r.request().url().includes('modules=')) return r.fulfill({ status: 403, body: '{}' });
+  const url = r.request().url();
+  // Plano gratuito: módulos da v1 e fundamentos da v2 recusados; cotação liberada.
+  if (url.includes('modules=') || url.includes('/v2/stocks/fundamentals')) return r.fulfill({ status: 403, body: '{}' });
   return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
     results: [{ symbol: 'PETR4', regularMarketPrice: 31.9 }] }) });
 });
@@ -178,6 +180,8 @@ await page.click('#btn-diagnostico');
 await page.waitForFunction(() => /fundamentos|ok/i.test(document.querySelector('#diagnostico .conclusao')?.textContent || ''), null, { timeout: 15000 });
 const conclusao = await page.locator('#diagnostico .conclusao').innerText();
 ok(/não cobre fundamentos/i.test(conclusao), `diagnóstico aponta limitação de plano: "${conclusao.slice(0, 70)}…"`);
+ok(/v2 também recusou/i.test(conclusao), 'diagnóstico reporta a rota v2 junto');
+ok((await page.locator('#diagnostico ul').innerText()).includes('v2:'), 'painel lista as sondagens da API v2');
 ok(!conclusao.includes('meu-token'), 'token não aparece no relatório');
 
 // Exportações não lançam erro

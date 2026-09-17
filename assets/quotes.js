@@ -20,6 +20,9 @@
   'use strict';
 
   const BASE = 'https://brapi.dev/api/quote/';
+  // A brapi também expõe uma API v2 com rotas separadas (/api/v2/stocks/quote?symbols=…).
+  // O app usa a v1; o diagnóstico sonda a v2 para descobrir o que o plano serve lá.
+  const paraV2 = (base) => String(base || BASE).replace(/\/quote\/?$/, '/v2/stocks');
   // Formato de ticker da B3 (PETR4, TAEE11): evita consultar linhas de exemplo.
   const TICKER_B3 = /^[A-Z]{4}\d{1,2}$/;
   // A brapi libera estes quatro por completo, sem token e sem restrição de plano —
@@ -123,7 +126,7 @@
    * fundamentos. Nunca devolve o token em texto.
    */
   async function diagnosticar(opcoes) {
-    const { token, fetchImpl, tickers = [] } = opcoes || {};
+    const { token, fetchImpl, tickers = [], base = BASE } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
     const etapas = [];
@@ -191,6 +194,11 @@
         `${BASE}${ticker}?modules=${MODULOS}&dividends=true&token=${seguro}`,
       );
       etapas[etapas.length - 1].tickerLivre = LIVRES.includes(ticker);
+
+      // Sondagem da API v2: se ela servir fundamentos no seu plano, o app pode migrar.
+      const v2 = paraV2(base);
+      await executar(`v2: cotação de ${ticker}`, 'v2-quote', `${v2}/quote?symbols=${ticker}&token=${seguro}`);
+      await executar(`v2: fundamentos de ${ticker}`, 'v2-fundamentos', `${v2}/fundamentals?symbols=${ticker}&token=${seguro}`);
     }
     return etapas;
   }
@@ -200,7 +208,7 @@
     if (!fundamentos) return '';
     const emQual = fundamentos.rotulo?.split(' em ')[1];
     if (!fundamentos.ok) {
-      return ` Já os fundamentos foram recusados${emQual ? ` em ${emQual}` : ''} (HTTP ${fundamentos.status}): LPA e dividendos não vêm no seu plano, então esses campos ficam para você preencher.`;
+      return ` Já os fundamentos da brapi foram recusados${emQual ? ` em ${emQual}` : ''} (HTTP ${fundamentos.status}): nesse plano, LPA e dividendos vêm da bolsai (BOLSAI_KEY) ou você preenche à mão.`;
     }
     if (fundamentos.tickerLivre) {
       return ` Os fundamentos só foram testados em ${emQual || 'PETR4'}, que a brapi libera de graça — isso não prova que seu plano cobre os demais.`;
@@ -246,8 +254,14 @@
     if (url?.ok || header?.ok) {
       const via = url?.ok ? 'na URL' : 'no header Authorization';
       const fundamentos = achar('fundamentos');
+      const v2Fund = achar('v2-fundamentos');
+      // A v2 pode servir no plano em que a v1 recusa: essa informação vem primeiro.
+      if (fundamentos && !fundamentos.ok && v2Fund?.ok) {
+        return `Rede e token ok (token aceito ${via}). Os fundamentos da API v1 foram recusados (HTTP ${fundamentos.status}), mas a rota v2 respondeu — vale migrar o app para /api/v2/stocks/fundamentals. Me mande esta linha do diagnóstico.`;
+      }
       if (fundamentos && !fundamentos.ok) {
-        return `Rede e token ok (token aceito ${via}). Seu plano não cobre fundamentos (HTTP ${fundamentos.status}) — a cotação atualiza, LPA e dividendos não.`;
+        const alternativa = v2Fund && !v2Fund.ok ? ` A rota v2 também recusou (HTTP ${v2Fund.status}).` : '';
+        return `Rede e token ok (token aceito ${via}). Seu plano não cobre fundamentos (HTTP ${fundamentos.status}) — a cotação atualiza, LPA e dividendos não.${alternativa} Com BOLSAI_KEY no servidor, o LPA vem da bolsai.`;
       }
       if (fundamentos?.ok && fundamentos.tickerLivre) {
         return `Rede e token ok (token aceito ${via}). Os fundamentos foram testados em ${fundamentos.rotulo.split(' em ')[1] || 'PETR4'}, que a brapi libera de graça — isso NÃO prova que seu plano cobre os demais. Adicione um ticker seu à lista e teste de novo.`;
