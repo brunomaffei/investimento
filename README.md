@@ -21,7 +21,7 @@ servidor, a chamada sai normalmente — e o token fica na variável de ambiente,
 nunca chegar ao navegador:
 
 ```bash
-BRAPI_TOKEN=seu_token npm start
+BRAPI_TOKEN=seu_token BOLSAI_KEY=sua_chave npm start
 ```
 
 Se você subir o servidor **sem** `BRAPI_TOKEN`, o token digitado no campo da tela é
@@ -51,8 +51,8 @@ confirmar se o `git pull` pegou.
 | --- | --- |
 | Cotação | ✅ sempre |
 | Nome e setor | ✅ sempre |
-| LPA | ⚠️ só com plano que cubra fundamentos, e com a caixa marcada |
-| DPA (FIIs) | ⚠️ mesma condição |
+| LPA | ✅ com `BOLSAI_KEY` e a caixa marcada (senão exige plano pago na brapi) |
+| DPA de 12 meses | ✅ mesma condição |
 | Payout | ❌ nunca — é premissa sua |
 | Lucro projetado e nº de ações | ❌ nunca — premissa sua |
 
@@ -134,7 +134,7 @@ O botão **🔌 Testar conexão** faz quatro chamadas e diz exatamente onde paro
 
 | Etapa | O que isola |
 | --- | --- |
-| Servidor local | se o app vem do `npm start`, e se esse servidor tem `BRAPI_TOKEN` |
+| Servidor local | se o app vem do `npm start`, e se tem `BRAPI_TOKEN` e `BOLSAI_KEY` |
 | Rede: PETR4 sem token | se a chamada consegue sair do navegador |
 | Token na URL (`?token=`) | se o token é aceito como parâmetro |
 | Token no header (`Bearer`) | se o token é aceito como cabeçalho |
@@ -164,6 +164,48 @@ Causas mais comuns, em ordem:
 Se o servidor local não trouxer nada, o app tenta a consulta direto do navegador
 antes de desistir, e o status diz qual caminho funcionou.
 
+## LPA e proventos automáticos (bolsai)
+
+A brapi cobre a **cotação** no plano gratuito, mas não os fundamentos. Para o LPA
+vir preenchido, o servidor consulta a [bolsai](https://usebolsai.com) — plano
+gratuito de 200 requisições/dia que cobre fundamentos e dividendos, com dados
+derivados de CVM e B3:
+
+```bash
+BOLSAI_KEY=sua_chave npm start     # chave grátis em usebolsai.com (login Google)
+```
+
+| | Origem |
+| --- | --- |
+| Cotação, nome, setor | brapi (`BRAPI_TOKEN`) |
+| **LPA (TTM)** | bolsai — `GET /fundamentals/{ticker}`, campo `lpa` |
+| **DPA de 12 meses** | bolsai — `GET /dividends/{ticker}`, soma dos eventos do período |
+| Payout, lucro projetado | você (premissa) |
+
+Com a chave configurada, marque **buscar também LPA e dividendos** e clique em
+*Atualizar cotações*: o LPA entra nas linhas em modo *LPA direto* e o DPA nas
+linhas em modo *Dividendo*. A caixa desmarcada não gasta requisição nenhuma da
+bolsai. A chave fica só no servidor — vai no header `X-API-Key`, nunca na URL,
+nunca no navegador, nunca no log.
+
+Sem `BOLSAI_KEY`, o app cai nos módulos da brapi (que exigem plano pago) e avisa
+quando são recusados, mantendo a cotação.
+
+### Se o LPA não vier preenchido
+
+A documentação pública da bolsai mistura nomes de campo em português e inglês, então
+cada métrica é procurada por uma lista de candidatos (`lpa`, `eps`, `lucro_por_acao`,
+`earnings_per_share`, …) e o resultado registra **qual** chave foi usada. Quando
+nenhuma casa, o app avisa e você descobre o nome certo com:
+
+```bash
+BOLSAI_KEY=sua_chave npm run inspecionar BBAS3
+```
+
+O comando imprime os campos recebidos, qual deles foi reconhecido como LPA e um
+evento de provento de exemplo. Basta acrescentar o nome correto em
+`CANDIDATOS_LPA`, no arquivo `assets/bolsai.js`. A chave nunca é impressa.
+
 ## De onde vêm os dados "corretos"
 
 Cada coluna tem um grau diferente de disponibilidade pública:
@@ -171,8 +213,9 @@ Cada coluna tem um grau diferente de disponibilidade pública:
 | Informação | Onde obter | Situação |
 | --- | --- | --- |
 | Cotação | brapi (grátis), HG Brasil, bolsai | resolvido |
-| LPA / lucro dos últimos 12 meses | CVM (fonte oficial), bolsai, brapi pago, Partnr | disponível, exige plano ou processar CSV |
-| Nº de ações e proventos pagos | CVM (composição do capital), B3, bolsai | disponível |
+| LPA / lucro dos últimos 12 meses | **bolsai (integrada)**, CVM, brapi pago | resolvido |
+| Proventos pagos (12 meses) | **bolsai (integrada)**, CVM, B3 | resolvido |
+| Nº de ações | CVM (composição do capital), B3 | disponível, não integrado |
 | Payout | derivável: proventos ÷ lucro do mesmo período | calculável, não é campo de API |
 | **Lucro projetado** | consenso de analistas (Refinitiv, Bloomberg, corretoras) | **não existe grátis — é premissa sua** |
 
@@ -193,8 +236,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 66 testes de cálculo, cotação e servidor (node puro, sem dependências)
-npm run test:ui   # 58 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
+npm test          # 92 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 75 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -215,7 +258,9 @@ assets/quotes.js              integração com a brapi.dev
 assets/app.js                 tabela editável, ordenação, import/export
 assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
-tools/servidor.mjs            servidor local + proxy da brapi (npm start)
+assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
+tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
+tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido
 tools/atualizar-cotacoes.mjs  atualizador de preços por linha de comando
 tools/captura.mjs             gera a captura de tela do README
 test/                         testes de cálculo, de cotação e de interface

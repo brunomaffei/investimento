@@ -14,20 +14,28 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buscarCotacoes, TICKER_B3 } = require('../assets/quotes.js');
+const { buscarCotacoes, TICKER_B3, BASE } = require('../assets/quotes.js');
 
 function lerArgumentos(argv) {
   const args = argv.slice(2);
   const idxToken = args.findIndex((a) => a === '--token' || a === '-t');
   const token = idxToken >= 0 ? args[idxToken + 1] : process.env.BRAPI_TOKEN;
-  const arquivo = args.find((a, i) => !a.startsWith('-') && i !== idxToken + 1);
-  return { arquivo, token, fundamentos: args.includes('--fundamentos') };
+  // Sem --token, idxToken é -1: não há índice a ignorar (senão o 0 seria excluído).
+  const indiceIgnorado = idxToken >= 0 ? idxToken + 1 : -1;
+  const arquivo = args.find((a, i) => !a.startsWith('-') && i !== indiceIgnorado);
+  return {
+    arquivo,
+    token,
+    fundamentos: args.includes('--fundamentos'),
+    // Igual ao servidor: permite apontar para outra base (usado pelos testes).
+    base: process.env.BRAPI_BASE || BASE,
+  };
 }
 
 const fmt = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function main() {
-  const { arquivo, token, fundamentos } = lerArgumentos(process.argv);
+  const { arquivo, token, fundamentos, base } = lerArgumentos(process.argv);
   if (!arquivo) {
     console.error('Uso: node tools/atualizar-cotacoes.mjs <carteira.json> [--token SEU_TOKEN] [--fundamentos]');
     process.exit(2);
@@ -48,7 +56,7 @@ async function main() {
   }
 
   console.log(`Consultando ${tickers.length} ticker(s) na brapi.dev…`);
-  const { dados, erros, avisos } = await buscarCotacoes(tickers, { token, fundamentos });
+  const { dados, erros, avisos } = await buscarCotacoes(tickers, { token, fundamentos, base });
 
   let atualizados = 0;
   for (const ativo of estado.ativos) {

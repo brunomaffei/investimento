@@ -322,6 +322,7 @@
       const fundamentos = !!estado.config.fundamentos;
       const { dados, erros, avisos, via: caminho } = await consultar(tickers, fundamentos);
       let atualizados = 0;
+      let comFundamentosDaBolsai = 0;
       estado.ativos.forEach((ativo) => {
         const info = dados[String(ativo.ticker || '').toUpperCase()];
         if (!info) return;
@@ -341,11 +342,17 @@
         if (positivo(info.dpa12m) && ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
           ativo.dpaInformado = fmt2.format(info.dpa12m);
         }
+        if (info.fonteFundamentos === 'bolsai' && (finito(info.lpa) || positivo(info.dpa12m))) {
+          comFundamentosDaBolsai++;
+        }
       });
 
       render();
       const listaErros = Object.entries(erros);
-      const extra = (avisos || []).join(' ');
+      const fonte = comFundamentosDaBolsai
+        ? ` LPA/proventos de ${comFundamentosDaBolsai} ativo(s) pela bolsai.`
+        : '';
+      const extra = `${(avisos || []).join(' ')}${fonte}`.trim();
       if (!listaErros.length) {
         const quando = new Date().toLocaleString('pt-BR');
         status(`${atualizados} ativo(s) atualizados em ${quando}${caminho}. ${extra}`.trim(), extra ? 'alerta' : 'ok');

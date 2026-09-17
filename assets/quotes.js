@@ -68,7 +68,7 @@
    */
   async function detectarServidor(opcoes) {
     const { fetchImpl, base = '' } = opcoes || {};
-    const ausente = { disponivel: false, comToken: false };
+    const ausente = { disponivel: false, comToken: false, comBolsai: false };
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) return ausente;
     // Em file:// não há servidor para consultar.
@@ -78,7 +78,12 @@
       if (!resposta.ok) return ausente;
       const corpo = await resposta.json();
       if (!corpo || corpo.servico !== ASSINATURA_SERVIDOR) return ausente;
-      return { disponivel: true, comToken: !!corpo.comToken, versao: corpo.versao || null };
+      return {
+        disponivel: true,
+        comToken: !!corpo.comToken,
+        comBolsai: !!corpo.comBolsai,
+        versao: corpo.versao || null,
+      };
     } catch {
       return ausente;
     }
@@ -164,10 +169,14 @@
       const params = new URLSearchParams({ tickers: 'PETR4' });
       if (!servidor.comToken && token) params.set('token', token);
       await executar(
-        `Servidor local (sem CORS)${servidor.comToken ? ' com BRAPI_TOKEN' : ' sem BRAPI_TOKEN'}`,
+        `Servidor local (sem CORS)${servidor.comToken ? ' com BRAPI_TOKEN' : ' sem BRAPI_TOKEN'}${servidor.comBolsai ? ' + bolsai' : ''}`,
         'servidor', `/api/cotacoes?${params}`, null, 'servidor',
       );
-      Object.assign(etapas[etapas.length - 1], { comToken: servidor.comToken, versao: servidor.versao });
+      Object.assign(etapas[etapas.length - 1], {
+        comToken: servidor.comToken,
+        comBolsai: servidor.comBolsai,
+        versao: servidor.versao,
+      });
     }
     // PETR4 é liberada pela brapi sem token: isola problema de rede de problema de token.
     await executar('Rede: PETR4 sem token', 'rede', `${BASE}PETR4`);
@@ -206,6 +215,10 @@
     if (servidor?.ok && servidor.preco) {
       const origemToken = servidor.comToken ? 'o token do servidor (BRAPI_TOKEN)' : 'o token digitado aqui, repassado ao servidor';
       const base = `O servidor local está respondendo e trouxe preço usando ${origemToken} — as cotações passam por ele, sem CORS.`;
+      // Com a bolsai configurada, os fundamentos não dependem do plano da brapi.
+      if (servidor.comBolsai) {
+        return `${base} Os fundamentos (LPA e proventos) vêm da bolsai pelo servidor, então não dependem do seu plano na brapi.`;
+      }
       // A cotação funcionar não significa que os fundamentos funcionem: reportar os dois.
       return `${base}${ressalvaDeFundamentos(achar('fundamentos'))}`;
     }
