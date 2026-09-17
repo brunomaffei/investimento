@@ -8,6 +8,8 @@
     yieldPadrao: 6,
     margemMinima: 0,
     token: '',
+    // Fundamentos (LPA e dividendos) são de plano pago na brapi; desligado por padrão.
+    fundamentos: false,
     ordenarPor: 'margem',
     ordemDecrescente: true,
     somenteComprar: false,

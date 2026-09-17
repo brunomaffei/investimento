@@ -126,6 +126,20 @@ await page.waitForFunction(() => document.querySelector('#status').textContent.i
 const st = await page.locator('#status').innerText();
 ok(st.toLowerCase().includes('token'), `erro 401 explicado ao usuário: "${st}"`);
 
+// Plano sem fundamentos: módulos recusados, mas a cotação tem de chegar
+await page.unroute('**/brapi.dev/**');
+await page.check('#fundamentos');
+await page.route('**/brapi.dev/**', (r) => {
+  if (r.request().url().includes('modules=')) return r.fulfill({ status: 403, body: '{}' });
+  const symbols = new URL(r.request().url()).pathname.split('/').pop().split(',');
+  return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    results: symbols.map((s) => ({ symbol: s, regularMarketPrice: 12.34 })) }) });
+});
+await page.click('#btn-cotacoes');
+await page.waitForFunction(() => document.querySelector('#status').textContent.includes('plano'), null, { timeout: 15000 });
+ok((await linha('CPLE6').locator('input[data-campo="cotacao"]').inputValue()) === '12,34', 'preço atualizado mesmo sem direito aos fundamentos');
+ok(/plano/i.test(await page.locator('#status').innerText()), 'app explica que os fundamentos não vieram');
+
 // Cotação automática preenchendo preço e LPA
 await page.unroute('**/brapi.dev/**');
 await page.route('**/brapi.dev/**', (r) => {

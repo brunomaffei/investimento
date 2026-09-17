@@ -273,7 +273,10 @@
     status(`Consultando ${tickers.length} ticker(s) na brapi.dev…`);
 
     try {
-      const { dados, erros } = await buscarCotacoes(tickers, { token: estado.config.token });
+      const { dados, erros, avisos } = await buscarCotacoes(tickers, {
+        token: estado.config.token,
+        fundamentos: !!estado.config.fundamentos,
+      });
       let atualizados = 0;
       estado.ativos.forEach((ativo) => {
         const info = dados[String(ativo.ticker || '').toUpperCase()];
@@ -296,11 +299,13 @@
 
       render();
       const listaErros = Object.entries(erros);
+      const extra = (avisos || []).join(' ');
       if (!listaErros.length) {
-        status(`${atualizados} ativo(s) atualizados em ${new Date().toLocaleString('pt-BR')}.`, 'ok');
+        const quando = new Date().toLocaleString('pt-BR');
+        status(`${atualizados} ativo(s) atualizados em ${quando}. ${extra}`.trim(), extra ? 'alerta' : 'ok');
       } else {
         const resumoErros = [...new Set(listaErros.map(([, motivo]) => motivo))].join(' ');
-        status(`${atualizados} atualizados. ${listaErros.length} com problema: ${resumoErros}`, 'alerta');
+        status(`${atualizados} atualizados. ${listaErros.length} com problema: ${resumoErros} ${extra}`.trim(), 'alerta');
       }
     } catch (erro) {
       status(`Não foi possível buscar cotações: ${erro.message}. Digite os preços à mão.`, 'erro');
@@ -378,6 +383,7 @@
     el('#token').value = estado.config.token ?? '';
     el('#busca').value = estado.config.busca ?? '';
     el('#somente-comprar').checked = !!estado.config.somenteComprar;
+    el('#fundamentos').checked = !!estado.config.fundamentos;
   }
 
   function ligarEventos() {
@@ -469,6 +475,10 @@
     el('#somente-comprar').addEventListener('change', (evento) => {
       estado.config.somenteComprar = evento.target.checked;
       render();
+    });
+    el('#fundamentos').addEventListener('change', (evento) => {
+      estado.config.fundamentos = evento.target.checked;
+      salvar();
     });
   }
 

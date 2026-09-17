@@ -4,6 +4,13 @@
  * A chamada acontece no navegador do usuário, direto para a brapi. O token
  * gratuito (brapi.dev/dashboard) fica salvo apenas no localStorage da máquina.
  * Se a busca falhar, o app continua funcionando com preços digitados à mão.
+ *
+ * Importante sobre planos: a cotação está no plano gratuito, mas os módulos de
+ * fundamentos (defaultKeyStatistics) e o histórico de dividendos são de planos
+ * pagos. Por isso os fundamentos são opcionais: quando a consulta com módulos é
+ * recusada, refazemos a chamada só com o preço, para não perder a atualização.
+ * Exceção documentada pela brapi: PETR4, MGLU3, VALE3 e ITUB4 têm acesso total
+ * sem token, o que serve para testar a integração.
  */
 (function (root, factory) {
   const api = factory();
@@ -22,9 +29,12 @@
     return lotes;
   };
 
+  const STATUS_DE_PLANO = [401, 402, 403];
+
   function mensagemDeErro(status) {
-    if (status === 401 || status === 403) return 'Token inválido ou ausente (pegue um grátis em brapi.dev).';
-    if (status === 402 || status === 429) return 'Limite do plano gratuito atingido. Tente de novo mais tarde.';
+    if (status === 401) return 'Token inválido ou ausente (pegue um grátis em brapi.dev).';
+    if (status === 403) return 'Seu plano não cobre esses dados (a cotação é gratuita; fundamentos são pagos).';
+    if (status === 402 || status === 429) return 'Limite do plano atingido. Tente de novo mais tarde.';
     if (status === 404) return 'Ticker não encontrado na B3.';
     return `Falha na consulta (HTTP ${status}).`;
   }
@@ -59,35 +69,60 @@
     };
   }
 
+  function montarUrl(lote, token, comFundamentos) {
+    const params = new URLSearchParams();
+    if (comFundamentos) {
+      params.set('modules', MODULOS);
+      params.set('dividends', 'true');
+    }
+    if (token) params.set('token', token);
+    const consulta = params.toString();
+    return `${BASE}${lote.join(',')}${consulta ? `?${consulta}` : ''}`;
+  }
+
   /**
    * @param {string[]} tickers
-   * @param {{token?: string, fetchImpl?: Function}} opcoes
-   * @returns {Promise<{dados: Object<string, object>, erros: Object<string, string>}>}
+   * @param {{token?: string, fundamentos?: boolean, fetchImpl?: Function}} opcoes
+   *   fundamentos: pede LPA/dividendos junto (exige plano pago, exceto nos tickers de teste).
+   * @returns {Promise<{dados: Object, erros: Object, avisos: string[]}>}
    */
   async function buscarCotacoes(tickers, opcoes) {
-    const { token, fetchImpl } = opcoes || {};
+    const { token, fetchImpl, fundamentos = false } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
 
     const limpos = [...new Set((tickers || []).map((t) => String(t || '').trim().toUpperCase()).filter(Boolean))];
     const dados = {};
     const erros = {};
+    const avisos = new Set();
+
+    const pedir = async (lote, comFundamentos) => {
+      const resposta = await http(montarUrl(lote, token, comFundamentos), { headers: { Accept: 'application/json' } });
+      if (!resposta.ok) return { status: resposta.status };
+      const corpo = await resposta.json();
+      return { resultados: Array.isArray(corpo.results) ? corpo.results : [] };
+    };
 
     for (const lote of dividirEmLotes(limpos, LOTE)) {
-      const params = new URLSearchParams({ modules: MODULOS, dividends: 'true' });
-      if (token) params.set('token', token);
-      const url = `${BASE}${lote.join(',')}?${params}`;
-
       try {
-        const resposta = await http(url, { headers: { Accept: 'application/json' } });
-        if (!resposta.ok) {
-          const motivo = mensagemDeErro(resposta.status);
+        let retorno = await pedir(lote, fundamentos);
+
+        // Plano sem direito aos módulos: refaz a chamada só com o preço.
+        if (retorno.status && fundamentos && STATUS_DE_PLANO.includes(retorno.status)) {
+          const semModulos = await pedir(lote, false);
+          if (semModulos.resultados) {
+            avisos.add('Fundamentos não liberados no seu plano da brapi — só a cotação foi atualizada.');
+            retorno = semModulos;
+          }
+        }
+
+        if (retorno.status) {
+          const motivo = mensagemDeErro(retorno.status);
           lote.forEach((t) => { erros[t] = motivo; });
           continue;
         }
-        const corpo = await resposta.json();
-        const resultados = Array.isArray(corpo.results) ? corpo.results : [];
-        resultados.forEach((r) => {
+
+        retorno.resultados.forEach((r) => {
           const normalizado = normalizar(r);
           if (normalizado.ticker) dados[normalizado.ticker] = normalizado;
         });
@@ -100,7 +135,7 @@
       }
     }
 
-    return { dados, erros };
+    return { dados, erros, avisos: [...avisos] };
   }
 
   return { buscarCotacoes, somarProventos12m, normalizar, mensagemDeErro, LOTE };

@@ -50,10 +50,20 @@ Escolha por ativo, na coluna **Base**:
 
 ## Cotação automática
 
-A busca acontece no seu navegador, direto na brapi.dev. O plano gratuito pede um
-token: crie em [brapi.dev/dashboard](https://brapi.dev/dashboard) e cole no campo
-*Token brapi.dev*. Ele fica salvo somente no seu navegador e nunca é enviado para
-outro lugar.
+A busca acontece no seu navegador, direto na [brapi.dev](https://brapi.dev). O que
+cada plano cobre muda o que o botão consegue preencher:
+
+| Dado | Plano gratuito da brapi |
+| --- | --- |
+| Cotação | ✅ sim (15.000 requisições/mês, com token) |
+| Nome e setor | ✅ sim |
+| LPA (`defaultKeyStatistics`) | ❌ plano pago |
+| Histórico de dividendos | ❌ plano pago |
+| Tudo, em PETR4, MGLU3, VALE3 e ITUB4 | ✅ sim, e sem token — servem para testar |
+
+Por isso a caixa **buscar também LPA e dividendos** vem desmarcada. Quando marcada e
+o plano não cobrir, o app **refaz a chamada só com o preço**, atualiza a cotação e
+avisa na tela — pedir módulo pago derrubaria a requisição inteira, cotação incluída.
 
 Regras da atualização automática:
 
@@ -70,10 +80,31 @@ Se preferir o terminal, exporte o JSON e rode:
 
 ```bash
 node tools/atualizar-cotacoes.mjs carteira-preco-teto-2026-09-17.json --token SEU_TOKEN
+# com fundamentos (plano pago): acrescente --fundamentos
 # ou: BRAPI_TOKEN=... node tools/atualizar-cotacoes.mjs carteira.json
 ```
 
 Depois importe o arquivo de volta pelo botão **⬆ Importar**.
+
+## De onde vêm os dados "corretos"
+
+Cada coluna tem um grau diferente de disponibilidade pública:
+
+| Informação | Onde obter | Situação |
+| --- | --- | --- |
+| Cotação | brapi (grátis), HG Brasil, bolsai | resolvido |
+| LPA / lucro dos últimos 12 meses | CVM (fonte oficial), bolsai, brapi pago, Partnr | disponível, exige plano ou processar CSV |
+| Nº de ações e proventos pagos | CVM (composição do capital), B3, bolsai | disponível |
+| Payout | derivável: proventos ÷ lucro do mesmo período | calculável, não é campo de API |
+| **Lucro projetado** | consenso de analistas (Refinitiv, Bloomberg, corretoras) | **não existe grátis — é premissa sua** |
+
+A fonte primária e gratuita de tudo que é histórico é a própria CVM
+([dados.cvm.gov.br](https://dados.cvm.gov.br/dataset/cia_aberta-doc-dfp) — DFP e ITR
+em CSV, com lucro líquido e composição do capital). As APIs comerciais desta tabela
+são, na prática, essa base da CVM já limpa e indexada por ticker.
+
+O Yahoo Finance não serve para este app: a API é não oficial e exige cookie/crumb,
+o que não funciona a partir do navegador ([referência](https://github.com/gadicc/yahoo-finance2/issues/764)).
 
 ## Formatos aceitos nos campos
 
@@ -84,8 +115,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 20 testes do núcleo de cálculo (node puro, sem dependências)
-npm run test:ui   # 34 verificações na interface com Chromium (precisa de playwright-core)
+npm test          # 36 testes de cálculo e de integração (node puro, sem dependências)
+npm run test:ui   # 36 verificações na interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -108,7 +139,7 @@ assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
 tools/atualizar-cotacoes.mjs  atualizador de preços por linha de comando
 tools/captura.mjs             gera a captura de tela do README
-test/                         testes de cálculo e de interface
+test/                         testes de cálculo, de cotação e de interface
 ```
 
 ## Aviso
