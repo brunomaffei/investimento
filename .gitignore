@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+*.log
+# carteiras exportadas pelo app ficam fora do repositório
+carteira-preco-teto-*.json
+preco-teto-*.csv

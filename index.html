@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preço-teto e margem de segurança</title>
+<meta name="description" content="Calculadora de preço-teto (método Bazin) e margem de segurança para ações e FIIs da B3.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📈</text></svg>">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="topo">
+  <div>
+    <h1>Ativos acompanhados: preço-teto e margem de segurança</h1>
+    <p class="sub">Lucro projetado, payout e yield são <strong>premissas suas</strong>. O app faz a conta e diz se o preço de hoje cabe no seu teto.</p>
+  </div>
+  <div class="acoes">
+    <button id="btn-adicionar" class="primario">+ Ativo</button>
+    <button id="btn-cotacoes">↻ Atualizar cotações</button>
+    <button id="btn-csv">⬇ CSV</button>
+    <button id="btn-json">⬇ JSON</button>
+    <button id="btn-importar">⬆ Importar</button>
+    <button id="btn-zerar" class="perigo">Limpar</button>
+    <input type="file" id="arquivo" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<section class="config">
+  <label>Yield aceitável padrão (%)
+    <input id="yield-padrao" inputmode="decimal" placeholder="6">
+    <small>Usado quando a linha não tem yield próprio. 6% é o corte clássico do Bazin.</small>
+  </label>
+  <label>Margem de segurança mínima (%)
+    <input id="margem-minima" inputmode="decimal" placeholder="0">
+    <small>Só marca SIM se o desconto for pelo menos isso. 0% = compra a qualquer preço abaixo do teto.</small>
+  </label>
+  <label>Token brapi.dev (opcional)
+    <input id="token" type="password" placeholder="cole aqui para cotação automática" autocomplete="off">
+    <small>Gratuito em brapi.dev/dashboard. Fica salvo só neste navegador.</small>
+  </label>
+  <label class="busca">Buscar
+    <input id="busca" placeholder="ticker, nome ou setor">
+    <span class="check"><input type="checkbox" id="somente-comprar"> mostrar só os SIM</span>
+  </label>
+</section>
+
+<section id="resumo" class="resumo"></section>
+<p id="status" class="status"></p>
+
+<div class="tabela-wrap">
+  <table id="tabela">
+    <thead><tr></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+<p class="contagem" id="contagem"></p>
+
+<details class="ajuda">
+  <summary>Como a conta é feita (e como usar em 2 minutos por mês)</summary>
+  <ol>
+    <li><strong>LPA</strong> = lucro projetado ÷ quantidade de ações. Se você já sabe o LPA, escolha a base “LPA direto” e pule esse passo.</li>
+    <li><strong>DPA</strong> = LPA × payout. Para FIIs, escolha “Dividendo (DPA)” e informe direto o provento anual (mensal × 12).</li>
+    <li><strong>Preço-teto</strong> = DPA ÷ yield aceitável. Com DPA de R$ 2,57 e yield de 6%: 2,57 ÷ 0,06 = <strong>R$ 42,86</strong>.</li>
+    <li><strong>Margem de segurança</strong> = (preço-teto ÷ cotação) − 1. Positiva significa que o papel está abaixo do seu teto.</li>
+    <li><strong>Comprar?</strong> fica SIM quando a margem alcança o mínimo que você exigiu no campo acima.</li>
+  </ol>
+  <p>Rotina mensal: clique em <em>Atualizar cotações</em>, revise o payout e o lucro projetado dos ativos que divulgaram balanço, ordene pela coluna <em>Margem de segurança</em> e olhe quem está no topo com SIM.</p>
+  <p class="aviso">Ferramenta de cálculo para estudo próprio. Não é recomendação de investimento: o resultado vale exatamente o que valem as premissas que você digitou.</p>
+</details>
+
+<script src="assets/calc.js"></script>
+<script src="assets/quotes.js"></script>
+<script src="assets/seed.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
