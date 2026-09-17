@@ -163,10 +163,25 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
   });
 
   await teste('com token, testa URL, header e fundamentos', async () => {
-    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
-    const etapas = await diagnosticar({ token: 'segredo', fetchImpl: http });
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'BBAS3', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
+    const etapas = await diagnosticar({ token: 'segredo', tickers: ['BBAS3'], fetchImpl: http });
     assert.deepEqual(etapas.map((e) => e.chave), ['rede', 'url', 'header', 'fundamentos']);
     assert.match(interpretar(etapas), /[Tt]udo ok/);
+  });
+
+  await teste('fundamentos são testados num ticker da carteira, não em PETR4', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: (u) => resposta([{ symbol: 'X', regularMarketPrice: 10 }]) }]);
+    const etapas = await diagnosticar({ token: 't', tickers: ['EXEMPLO', 'PETR4', 'TAEE11'], fetchImpl: http });
+    const chamada = http.chamadas.find((u) => u.includes('modules='));
+    assert.ok(chamada.includes('TAEE11'), `deveria testar TAEE11, chamou ${chamada}`);
+    assert.equal(etapas.find((e) => e.chave === 'fundamentos').tickerLivre, false);
+  });
+
+  await teste('sem ticker próprio, avisa que PETR4 não prova cobertura de plano', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => resposta([{ symbol: 'PETR4', regularMarketPrice: 31, defaultKeyStatistics: { trailingEps: 4.2 } }]) }]);
+    const etapas = await diagnosticar({ token: 'segredo', tickers: ['PETR4'], fetchImpl: http });
+    assert.equal(etapas.find((e) => e.chave === 'fundamentos').tickerLivre, true);
+    assert.match(interpretar(etapas), /NÃO prova/);
   });
 
   await teste('o token nunca aparece em texto no resultado', async () => {

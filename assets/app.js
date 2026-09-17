@@ -3,11 +3,12 @@
   'use strict';
 
   const { parseNumero, avaliarCarteira, avaliarAtivo } = window.Calc;
-  const { buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar } = window.Quotes;
+  const {
+    buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar, TICKER_B3,
+  } = window.Quotes;
   const { CONFIG_PADRAO, CARTEIRA_INICIAL } = window.Seed;
 
   const CHAVE_STORAGE = 'precoteto.v1';
-  const TICKER_B3 = /^[A-Z]{4}\d{1,2}$/; // filtra linhas de exemplo antes de chamar a API
 
   const el = (sel) => document.querySelector(sel);
   const novoId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -154,7 +155,9 @@
   function badgeVeredito(m) {
     if (m.veredito === 'sim') return '<span class="badge sim">SIM</span>';
     if (m.veredito === 'nao') return '<span class="badge nao">NÃO</span>';
-    return `<span class="badge falta" title="Falta: ${escapar(m.faltando.join(', '))}">FALTA DADO</span>`;
+    // Dizer QUAL premissa falta poupa o usuário de caçar a célula vazia.
+    const resumo = m.faltando.length > 2 ? `${m.faltando.slice(0, 2).join(' + ')}…` : m.faltando.join(' + ');
+    return `<span class="badge falta" title="Falta preencher: ${escapar(m.faltando.join(', '))}">falta ${escapar(resumo)}</span>`;
   }
 
   function linhaHtml({ ativo, metricas: m }) {
@@ -367,7 +370,8 @@
     painel.innerHTML = '<p class="rodando">Testando a conexão com a brapi…</p>';
 
     try {
-      const etapas = await diagnosticar({ token: estado.config.token });
+      const tickers = estado.ativos.map((a) => a.ticker);
+      const etapas = await diagnosticar({ token: estado.config.token, tickers });
       const linhas = etapas.map((e) => {
         const marca = e.ok ? '✅' : e.bloqueado ? '🚫' : '❌';
         const detalhe = e.ok
@@ -377,8 +381,9 @@
           : `${e.status ? `HTTP ${e.status}` : 'sem resposta'} — ${escapar(e.detalhe || '')}`;
         return `<li>${marca} <strong>${escapar(e.rotulo)}</strong>: ${detalhe} <span class="ms">${e.ms} ms</span></li>`;
       });
+      const versao = etapas.find((e) => e.versao)?.versao;
       painel.innerHTML = `
-        <h2>Diagnóstico da conexão</h2>
+        <h2>Diagnóstico da conexão${versao?.sha ? ` <span class="versao">código ${escapar(versao.sha)}${versao.branch ? ` · ${escapar(versao.branch)}` : ''}</span>` : ''}</h2>
         <ul>${linhas.join('')}</ul>
         <p class="conclusao">${escapar(interpretar(etapas))}</p>
         ${estado.config.token ? '' : '<p class="dica">Sem token, só o teste de rede roda. Cole o token para testar a autenticação.</p>'}`;

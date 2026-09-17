@@ -23,6 +23,30 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { buscarCotacoes, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
 
+/**
+ * Lê a versão do código servido direto do .git, sem depender do git instalado.
+ * Serve para responder "estou rodando a versão nova?" sem adivinhação.
+ */
+async function versaoDoGit(raiz) {
+  const ler = (...partes) => readFile(join(raiz, ...partes), 'utf8');
+  try {
+    const head = (await ler('.git', 'HEAD')).trim();
+    if (!head.startsWith('ref:')) return { sha: head.slice(0, 7), branch: null };
+    const ref = head.slice(4).trim();
+    const branch = ref.replace('refs/heads/', '');
+    try {
+      return { sha: (await ler('.git', ref)).trim().slice(0, 7), branch };
+    } catch {
+      // Referência empacotada em .git/packed-refs
+      const empacotadas = await ler('.git', 'packed-refs');
+      const linha = empacotadas.split('\n').find((l) => l.endsWith(` ${ref}`));
+      return { sha: linha ? linha.split(' ')[0].slice(0, 7) : null, branch };
+    }
+  } catch {
+    return null;
+  }
+}
+
 const RAIZ = resolve(new URL('..', import.meta.url).pathname);
 const TIPOS = {
   '.html': 'text/html; charset=utf-8',
@@ -48,6 +72,7 @@ function lerArgumentos(argv) {
 }
 
 const { porta, token, base } = lerArgumentos(process.argv);
+const versao = await versaoDoGit(RAIZ);
 
 const json = (resposta, codigo, corpo) => {
   const texto = JSON.stringify(corpo);
@@ -92,7 +117,7 @@ const servidor = createServer(async (pedido, resposta) => {
 
   if (url.pathname === '/api/health') {
     // O app usa esta assinatura para saber que pode consultar pelo servidor.
-    return json(resposta, 200, { servico: ASSINATURA_SERVIDOR, comToken: !!token });
+    return json(resposta, 200, { servico: ASSINATURA_SERVIDOR, comToken: !!token, versao });
   }
 
   if (url.pathname === '/api/cotacoes') {
@@ -123,5 +148,6 @@ const servidor = createServer(async (pedido, resposta) => {
 
 servidor.listen(porta, () => {
   console.log(`Preço-teto no ar: http://localhost:${porta}`);
+  if (versao?.sha) console.log(`Versão servida: ${versao.sha}${versao.branch ? ` (${versao.branch})` : ''}`);
   console.log(token ? 'Token da brapi carregado (fica no servidor, não vai ao navegador).' : 'Sem BRAPI_TOKEN: use --token ou a variável de ambiente para liberar todos os tickers.');
 });

@@ -113,18 +113,23 @@
     const yieldAtual = dpa !== null && cotacao !== null ? dpa / cotacao : null;
     const payoutImplicito = modo === 'dividendo' && dpa !== null && lpa ? (dpa / lpa) * 100 : null;
 
+    // Lista campo a campo o que impede o cálculo, para a tela poder dizer o que digitar.
     let veredito = 'incompleto';
     const faltando = [];
-    if (cotacao === null) faltando.push('cotação atual');
-    if (dpa === null || dpa <= 0) {
-      const exigido = {
-        dividendo: 'dividendo por ação (DPA)',
-        lpa: 'LPA e payout',
-        lucro: 'lucro projetado, quantidade de ações e payout',
-      };
-      faltando.push(exigido[modo]);
+    if (cotacao === null) faltando.push('cotação');
+    if (!yieldAceitavel) faltando.push('yield');
+    if (modo === 'dividendo') {
+      if (dpa === null) faltando.push('DPA');
+    } else {
+      if (modo === 'lpa' && lpa === null) faltando.push('LPA');
+      if (modo === 'lucro') {
+        if (lucro === null) faltando.push('lucro');
+        if (quantidade === null) faltando.push('nº de ações');
+      }
+      if (payout === null) faltando.push('payout');
     }
-    if (!yieldAceitavel) faltando.push('yield aceitável');
+    // Premissas preenchidas, mas o resultado não é um dividendo positivo (prejuízo, payout 0).
+    if (!faltando.length && (dpa === null || dpa <= 0)) faltando.push('lucro positivo');
     if (!faltando.length) {
       veredito = margem * 100 >= margemMinima ? 'sim' : 'nao';
     }

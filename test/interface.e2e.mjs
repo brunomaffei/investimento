@@ -51,6 +51,8 @@ ok(await celula('EXEMPLO', 'margem') === '+17,18%', `margem do EXEMPLO = ${await
 ok(await celula('EXEMPLO', 'lpa') === 'R$ 1,70', `LPA = ${await celula('EXEMPLO','lpa')}`);
 ok(await celula('EXEMPLO', 'dpa') === 'R$ 1,45', `DPA = ${await celula('EXEMPLO','dpa')}`);
 ok((await celula('EXEMPLO', 'veredito')) === 'SIM', 'veredito SIM');
+const faltaBBAS = await celula('BBAS3', 'veredito');
+ok(/PAYOUT|LPA/i.test(faltaBBAS), `o selo diz qual premissa falta: "${faltaBBAS}"`);
 ok((await page.locator('#resumo .card.ok strong').innerText()) === '1', 'resumo: 1 dentro do teto');
 ok((await page.locator('#resumo .card.alerta strong').innerText()) === '6', 'resumo: 6 com premissas faltando');
 

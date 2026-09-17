@@ -14,9 +14,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buscarCotacoes } = require('../assets/quotes.js');
-
-const TICKER_B3 = /^[A-Z]{4}\d{1,2}$/;
+const { buscarCotacoes, TICKER_B3 } = require('../assets/quotes.js');
 
 function lerArgumentos(argv) {
   const args = argv.slice(2);

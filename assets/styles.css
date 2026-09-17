@@ -138,6 +138,7 @@ button.perigo:hover { border-color: var(--vermelho); color: #ffb4b4; }
 .diagnostico .ms { color: #5b6880; font-size: 11px; }
 .diagnostico .conclusao { margin: 10px 0 0; padding: 8px 10px; background: var(--fundo); border-radius: 6px; color: var(--texto); }
 .diagnostico .dica, .diagnostico .rodando { color: var(--texto-fraco); margin: 8px 0 0; }
+.diagnostico .versao { text-transform: none; letter-spacing: 0; font-weight: 400; color: #5b6880; font-family: ui-monospace, monospace; }
 
 .tabela-wrap {
   max-width: 1600px;
@@ -187,8 +188,8 @@ tbody .sub { display: block; font-size: 11px; color: var(--texto-fraco); margin-
 td.num .sub { text-align: right; font-weight: 400; }
 
 /* As duas colunas de decisão ficam sempre visíveis, mesmo rolando a tabela na horizontal. */
-th.col-margem, td.col-margem { position: sticky; right: 104px; min-width: 112px; background: var(--fundo-painel); }
-th.col-veredito, td.col-veredito { position: sticky; right: 0; min-width: 104px; background: var(--fundo-painel); }
+th.col-margem, td.col-margem { position: sticky; right: 116px; min-width: 108px; background: var(--fundo-painel); }
+th.col-veredito, td.col-veredito { position: sticky; right: 0; min-width: 116px; background: var(--fundo-painel); }
 thead th.col-margem, thead th.col-veredito { background: var(--fundo-painel-2); z-index: 2; }
 td.col-margem, td.col-veredito { box-shadow: -1px 0 0 rgba(37, 48, 70, .8); }
 tbody tr:hover td.col-margem, tbody tr:hover td.col-veredito { background: #151d2d; }
@@ -236,7 +237,17 @@ select.cel-input { text-align: left; min-width: 122px; font-size: 12px; backgrou
 }
 .badge.sim { background: var(--verde-fundo); color: var(--verde); }
 .badge.nao { background: var(--vermelho-fundo); color: var(--vermelho); }
-.badge.falta { background: var(--ambar-fundo); color: var(--ambar); cursor: help; }
+.badge.falta {
+  background: var(--ambar-fundo);
+  color: var(--ambar);
+  cursor: help;
+  white-space: normal;
+  text-transform: uppercase;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  padding: 3px 7px;
+}
 
 .remover {
   padding: 2px 6px;
@@ -270,24 +281,7 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
 /* Celular: cada linha vira um cartão com os rótulos à esquerda. */
 @media (max-width: 860px) {
   body { padding: 16px 12px 48px; }
-  .diagnostico {
-  max-width: 1600px;
-  margin: 0 auto 16px;
-  background: var(--fundo-painel);
-  border: 1px solid var(--borda);
-  border-left: 3px solid var(--acento);
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-size: 13px;
-}
-.diagnostico h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-fraco); }
-.diagnostico ul { margin: 0; padding-left: 18px; }
-.diagnostico li { margin-bottom: 4px; }
-.diagnostico .ms { color: #5b6880; font-size: 11px; }
-.diagnostico .conclusao { margin: 10px 0 0; padding: 8px 10px; background: var(--fundo); border-radius: 6px; color: var(--texto); }
-.diagnostico .dica, .diagnostico .rodando { color: var(--texto-fraco); margin: 8px 0 0; }
-
-.tabela-wrap { border: none; background: transparent; overflow: visible; }
+  .tabela-wrap { border: none; background: transparent; overflow: visible; }
   table, tbody, tr, td { display: block; width: 100%; }
   thead { display: none; }
   tbody tr {

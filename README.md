@@ -173,8 +173,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 61 testes de cálculo, cotação e servidor (node puro, sem dependências)
-npm run test:ui   # 57 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
+npm test          # 65 testes de cálculo, cotação e servidor (node puro, sem dependências)
+npm run test:ui   # 58 verificações de interface (inclui o fluxo pelo servidor) com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

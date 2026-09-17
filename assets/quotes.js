@@ -20,6 +20,11 @@
   'use strict';
 
   const BASE = 'https://brapi.dev/api/quote/';
+  // Formato de ticker da B3 (PETR4, TAEE11): evita consultar linhas de exemplo.
+  const TICKER_B3 = /^[A-Z]{4}\d{1,2}$/;
+  // A brapi libera estes quatro por completo, sem token e sem restrição de plano —
+  // então eles NÃO servem para descobrir o que o seu plano cobre.
+  const LIVRES = ['PETR4', 'MGLU3', 'VALE3', 'ITUB4'];
   const LOTE = 10; // a brapi aceita vários tickers por chamada; lotes evitam URLs gigantes
   const MODULOS = 'defaultKeyStatistics,summaryProfile';
 
@@ -73,7 +78,7 @@
       if (!resposta.ok) return ausente;
       const corpo = await resposta.json();
       if (!corpo || corpo.servico !== ASSINATURA_SERVIDOR) return ausente;
-      return { disponivel: true, comToken: !!corpo.comToken };
+      return { disponivel: true, comToken: !!corpo.comToken, versao: corpo.versao || null };
     } catch {
       return ausente;
     }
@@ -113,7 +118,7 @@
    * fundamentos. Nunca devolve o token em texto.
    */
   async function diagnosticar(opcoes) {
-    const { token, fetchImpl } = opcoes || {};
+    const { token, fetchImpl, tickers = [] } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
     const etapas = [];
@@ -149,6 +154,11 @@
       }
     };
 
+    // Fundamentos precisam ser testados num ticker que NÃO seja dos liberados,
+    // senão o resultado diz respeito à cortesia da brapi, não ao seu plano.
+    const candidatos = (tickers || []).map((t) => String(t || '').trim().toUpperCase()).filter((t) => TICKER_B3.test(t));
+    const alvoFundamentos = candidatos.find((t) => !LIVRES.includes(t)) || null;
+
     const servidor = await detectarServidor({ fetchImpl: http });
     if (servidor.disponivel) {
       const params = new URLSearchParams({ tickers: 'PETR4' });
@@ -157,7 +167,7 @@
         `Servidor local (sem CORS)${servidor.comToken ? ' com BRAPI_TOKEN' : ' sem BRAPI_TOKEN'}`,
         'servidor', `/api/cotacoes?${params}`, null, 'servidor',
       );
-      etapas[etapas.length - 1].comToken = servidor.comToken;
+      Object.assign(etapas[etapas.length - 1], { comToken: servidor.comToken, versao: servidor.versao });
     }
     // PETR4 é liberada pela brapi sem token: isola problema de rede de problema de token.
     await executar('Rede: PETR4 sem token', 'rede', `${BASE}PETR4`);
@@ -165,7 +175,13 @@
       const seguro = encodeURIComponent(token);
       await executar('Token na URL (?token=)', 'url', `${BASE}PETR4?token=${seguro}`);
       await executar('Token no header (Bearer)', 'header', `${BASE}PETR4`, { Authorization: `Bearer ${token}` });
-      await executar('Fundamentos (LPA/dividendos)', 'fundamentos', `${BASE}PETR4?modules=${MODULOS}&dividends=true&token=${seguro}`);
+      const ticker = alvoFundamentos || 'PETR4';
+      await executar(
+        `Fundamentos (LPA/dividendos) em ${ticker}`,
+        'fundamentos',
+        `${BASE}${ticker}?modules=${MODULOS}&dividends=true&token=${seguro}`,
+      );
+      etapas[etapas.length - 1].tickerLivre = LIVRES.includes(ticker);
     }
     return etapas;
   }
@@ -205,10 +221,13 @@
       if (fundamentos && !fundamentos.ok) {
         return `Rede e token ok (token aceito ${via}). Seu plano não cobre fundamentos (HTTP ${fundamentos.status}) — a cotação atualiza, LPA e dividendos não.`;
       }
-      if (fundamentos?.ok && fundamentos.lpa === null) {
-        return `Rede e token ok (token aceito ${via}). A API aceitou o pedido de fundamentos, mas não devolveu LPA para PETR4.`;
+      if (fundamentos?.ok && fundamentos.tickerLivre) {
+        return `Rede e token ok (token aceito ${via}). Os fundamentos foram testados em ${fundamentos.rotulo.split(' em ')[1] || 'PETR4'}, que a brapi libera de graça — isso NÃO prova que seu plano cobre os demais. Adicione um ticker seu à lista e teste de novo.`;
       }
-      return `Tudo ok: token aceito ${via}${fundamentos?.ok ? ' e fundamentos liberados' : ''}. Se ainda não atualiza, confira se os tickers estão no formato da B3 (PETR4, TAEE11).`;
+      if (fundamentos?.ok && fundamentos.lpa === null) {
+        return `Rede e token ok (token aceito ${via}). A API aceitou o pedido de fundamentos, mas não devolveu LPA para esse ticker.`;
+      }
+      return `Tudo ok: token aceito ${via}${fundamentos?.ok ? ' e fundamentos liberados no seu plano' : ''}. Se ainda não atualiza, confira se os tickers estão no formato da B3 (PETR4, TAEE11).`;
     }
     return `O token foi recusado nas duas formas (URL: HTTP ${url?.status}, header: HTTP ${header?.status}). Confira se copiou o token inteiro em brapi.dev/dashboard.`;
   }
@@ -332,6 +351,6 @@
   return {
     buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar,
     somarProventos12m, normalizar, mensagemDeErro, motivoDeFalhaDeRede,
-    LOTE, BASE, ASSINATURA_SERVIDOR,
+    LOTE, BASE, ASSINATURA_SERVIDOR, TICKER_B3, LIVRES,
   };
 });

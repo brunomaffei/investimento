@@ -117,6 +117,27 @@ teste('dados faltando -> incompleto, com a lista do que falta', () => {
   assert.equal(m.precoTeto, null);
   assert.ok(m.faltando.length >= 1);
 });
+teste('a lista aponta campo por campo, conforme o modo', () => {
+  assert.deepEqual(
+    avaliarAtivo({ modo: 'lucro', cotacao: 10 }, cfg).faltando,
+    ['lucro', 'nº de ações', 'payout'],
+  );
+  assert.deepEqual(avaliarAtivo({ modo: 'lpa', cotacao: 10, payout: 70 }, cfg).faltando, ['LPA']);
+  assert.deepEqual(avaliarAtivo({ modo: 'lpa', cotacao: 10, lpaInformado: 3 }, cfg).faltando, ['payout']);
+  assert.deepEqual(avaliarAtivo({ modo: 'dividendo', cotacao: 10 }, cfg).faltando, ['DPA']);
+  assert.deepEqual(avaliarAtivo({ modo: 'dividendo', dpaInformado: 1 }, cfg).faltando, ['cotação']);
+  assert.deepEqual(
+    avaliarAtivo({ modo: 'dividendo', cotacao: 10, dpaInformado: 1 }, { yieldPadrao: 0 }).faltando,
+    ['yield'],
+  );
+});
+teste('premissas completas com prejuízo apontam lucro positivo', () => {
+  const m = avaliarAtivo(
+    { modo: 'lucro', cotacao: 10, lucroProjetado: '-1 bi', quantidadeAcoes: '1 bi', payout: 50 },
+    cfg,
+  );
+  assert.deepEqual(m.faltando, ['lucro positivo']);
+});
 teste('quantidade de ações zero não gera Infinity', () => {
   const m = avaliarAtivo({ cotacao: 10, lucroProjetado: 100, quantidadeAcoes: 0, payout: 50 }, cfg);
   assert.equal(m.lpa, null);
