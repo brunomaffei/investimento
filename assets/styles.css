@@ -214,6 +214,8 @@ tbody tr:hover td.col-margem, tbody tr:hover td.col-veredito { background: #151d
 select.cel-input { text-align: left; min-width: 122px; font-size: 12px; background: var(--fundo); border-color: var(--borda); }
 .cel-input::placeholder { color: #4d586e; }
 
+.tag.erro { color: #ffb4b4; border-color: var(--vermelho); background: var(--vermelho-fundo); }
+
 .tag {
   margin-left: 4px;
   font-size: 9px;

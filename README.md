@@ -177,6 +177,32 @@ Causas mais comuns, em ordem:
 Se o servidor local não trouxer nada, o app tenta a consulta direto do navegador
 antes de desistir, e o status diz qual caminho funcionou.
 
+## API v2 da brapi
+
+As cotações usam a API v2 (`GET /api/v2/stocks/quote?symbols=B3SA3`), com o token
+no header `Authorization: Bearer` — nunca na URL, nunca no navegador. O cliente
+está em `assets/brapi-v2.js`, tipado por JSDoc (o projeto é JS puro, sem build):
+
+```js
+const { buscarCotacao } = require('./assets/brapi-v2.js');
+const dados = await buscarCotacao('B3SA3');   // token: BRAPI_TOKEN do ambiente
+// -> results[0].data, já desembrulhado
+```
+
+Respostas não-2xx viram `ErroBrapi` com o `status` preservado e mensagem em
+português (401 token, 403 plano, 429 limite, 404 ticker, 5xx indisponível);
+corpo sem `results`, lista vazia ou item sem dados têm código próprio
+(`sem-results`, `lista-vazia`, `sem-dados`) em vez de devolver `undefined`.
+
+Duas decisões de integração:
+
+- **queda para a v1**: se a v2 falhar por qualquer motivo, o servidor repete na v1
+  e informa a fonte em `fonte: "v1"`, para a cotação nunca se perder. `BRAPI_V2=0`
+  força a v1.
+- **fundamentos continuam na v1**: a resposta comum da v1 traz `earningsPerShare`
+  na raiz, o que dá LPA sem plano pago. Enquanto a v2 não comprovar o mesmo campo,
+  pedir fundamentos usa a v1 — trocar às cegas custaria esse LPA de graça.
+
 ## LPA e proventos automáticos (bolsai)
 
 A brapi cobre a **cotação** no plano gratuito, mas não os fundamentos. Para o LPA
@@ -190,7 +216,7 @@ BOLSAI_KEY=sua_chave npm start     # chave grátis em usebolsai.com (login Googl
 
 | | Origem |
 | --- | --- |
-| Cotação, nome, setor | brapi (`BRAPI_TOKEN`) |
+| Cotação, nome, setor | brapi v2, com queda para v1 (`BRAPI_TOKEN`) |
 | **LPA (TTM)** | bolsai — `GET /fundamentals/{ticker}`, campo `lpa` |
 | **DPA de 12 meses** | bolsai — `GET /dividends/{ticker}`, soma dos eventos do período |
 | Payout, lucro projetado | você (premissa) |
@@ -249,8 +275,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 100 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 86 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 126 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 90 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -271,6 +297,7 @@ assets/quotes.js              integração com a brapi.dev
 assets/app.js                 tabela editável, ordenação, import/export
 assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
+assets/brapi-v2.js            cliente da API v2 da brapi (cotação, header Bearer)
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido

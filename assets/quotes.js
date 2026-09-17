@@ -146,11 +146,12 @@
             const motivos = Object.values(corpo?.erros || {});
             if (!info && motivos.length) etapa.detalhe = motivos[0];
           } else {
-            // A v1 devolve {results}, a v2 pode usar outra chave: pega o primeiro array.
+            // A v1 devolve {results:[ativo]}, a v2 devolve {results:[{data:ativo}]}.
             const lista = Array.isArray(corpo?.results) ? corpo.results
               : Array.isArray(corpo) ? corpo
               : Object.values(corpo || {}).find(Array.isArray) || [];
-            const primeiro = lista[0] || null;
+            const item = lista[0] || null;
+            const primeiro = item && typeof item.data === 'object' && item.data !== null ? item.data : item;
             etapa.preco = primeiro ? Number(primeiro.regularMarketPrice ?? primeiro.close ?? primeiro.price) || null : null;
             // Mesma leitura de normalizar(): earningsPerShare vem na raiz, sem módulo pago.
             const bruto = primeiro?.defaultKeyStatistics?.trailingEps ?? primeiro?.earningsPerShare;
@@ -220,6 +221,19 @@
     return etapas;
   }
 
+  /**
+   * Complemento sobre o LPA vindo na resposta comum (sem módulo pago). Devolve
+   * string vazia quando não há notícia — aí quem fala é a ressalva do plano.
+   */
+  function noticiaDoLpa(raiz) {
+    if (!raiz?.ok || raiz.lpa === null || raiz.lpa === undefined) return '';
+    const emQual = raiz.rotulo?.split(' em ')[1] || 'seu ticker';
+    if (raiz.tickerLivre) {
+      return ` O LPA veio na resposta comum, mas só em ${emQual}, que a brapi libera de graça — acrescente um ticker seu à lista para saber se vale para os demais.`;
+    }
+    return ` E a melhor notícia: a brapi devolveu o LPA de ${emQual} (${raiz.lpa}) na resposta comum, sem módulo pago — o app preenche o LPA sozinho, sem bolsai e sem plano pago.`;
+  }
+
   /** Complemento sobre fundamentos, que dependem do plano e não da conexão. */
   function ressalvaDeFundamentos(fundamentos) {
     if (!fundamentos) return '';
@@ -240,12 +254,12 @@
     if (servidor?.ok && servidor.preco) {
       const origemToken = servidor.comToken ? 'o token do servidor (BRAPI_TOKEN)' : 'o token digitado aqui, repassado ao servidor';
       const base = `O servidor local está respondendo e trouxe preço usando ${origemToken} — as cotações passam por ele, sem CORS.`;
-      // Com a bolsai configurada, os fundamentos não dependem do plano da brapi.
       if (servidor.comBolsai) {
         return `${base} Os fundamentos (LPA e proventos) vêm da bolsai pelo servidor, então não dependem do seu plano na brapi.`;
       }
-      // A cotação funcionar não significa que os fundamentos funcionem: reportar os dois.
-      return `${base}${ressalvaDeFundamentos(achar('fundamentos'))}`;
+      // LPA liberado na resposta comum é a informação mais útil daqui: vem antes
+      // da ressalva sobre o plano, e não pode ficar escondida atrás deste ramo.
+      return `${base}${noticiaDoLpa(achar('lpa-raiz')) || ressalvaDeFundamentos(achar('fundamentos'))}`;
     }
     if (servidor?.ok && !servidor.preco) {
       const semToken = servidor.comToken === false;
@@ -272,15 +286,8 @@
       const via = url?.ok ? 'na URL' : 'no header Authorization';
       const fundamentos = achar('fundamentos');
       const v2Fund = achar('v2-fundamentos');
-      const raiz = achar('lpa-raiz');
-      // Em PETR4/MGLU3/VALE3/ITUB4 tudo é liberado: só vale como prova fora deles.
-      if (raiz?.ok && raiz.lpa !== null && !raiz.tickerLivre) {
-        const emQual = raiz.rotulo?.split(' em ')[1] || 'seu ticker';
-        return `Rede e token ok (token aceito ${via}). E a melhor notícia: a brapi devolveu o LPA de ${emQual} na resposta comum (LPA ${raiz.lpa}), sem módulo pago — o app preenche o LPA sozinho, sem bolsai e sem plano pago.`;
-      }
-      if (raiz?.ok && raiz.lpa !== null && raiz.tickerLivre) {
-        return `Rede e token ok (token aceito ${via}). O LPA veio na resposta comum, mas só em ${raiz.rotulo?.split(' em ')[1] || 'PETR4'}, que a brapi libera de graça — acrescente um ticker seu à lista e teste de novo para saber se vale para os demais.`;
-      }
+      const noticia = noticiaDoLpa(achar('lpa-raiz'));
+      if (noticia) return `Rede e token ok (token aceito ${via}).${noticia}`;
       // A v2 pode servir no plano em que a v1 recusa: essa informação vem primeiro.
       if (fundamentos && !fundamentos.ok && v2Fund?.ok) {
         return `Rede e token ok (token aceito ${via}). Os fundamentos da API v1 foram recusados (HTTP ${fundamentos.status}), mas a rota v2 respondeu — vale migrar o app para /api/v2/stocks/fundamentals. Me mande esta linha do diagnóstico.`;

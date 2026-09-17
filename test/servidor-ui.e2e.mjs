@@ -129,6 +129,9 @@ try {
   await p2.waitForFunction(() => /problema|atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
   const semNada = await p2.locator('#status').innerText();
   ok(/token/i.test(semNada), `sem token algum, o app explica: "${semNada.slice(0, 90)}…"`);
+  // O motivo também aparece na própria linha, não só no status
+  ok((await linha2('BBAS3').locator('.tag.erro').count()) === 1, 'a linha ganha selo de erro');
+  ok(/[Tt]oken/.test(await linha2('BBAS3').locator('.tag.erro').getAttribute('title')), 'o selo carrega o motivo');
 
   // Agora o token vai no campo da tela — era o caso que falhava antes
   await p2.fill('#token', 'TOKEN-DIGITADO-NA-TELA');
@@ -138,6 +141,9 @@ try {
   ok(/via servidor local/.test(comTokenNaTela), `usou o servidor: "${comTokenNaTela.slice(0, 90)}…"`);
   ok((await linha2('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31',
     'token digitado na tela é repassado ao servidor e a cotação chega');
+  ok((await linha2('BBAS3').locator('.tag.erro').count()) === 0, 'selo de erro desaparece quando dá certo');
+  // innerText aplica text-transform: uppercase, então a comparação ignora caixa.
+  ok(/^auto$/i.test((await linha2('BBAS3').locator('.tag').innerText()).trim()), 'linha passa a mostrar "auto"');
 
   // Resposta estranha do servidor não pode escrever "0,00"/"NaN" na cotação
   await p2.route('**/api/cotacoes**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({

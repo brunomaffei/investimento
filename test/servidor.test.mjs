@@ -53,7 +53,29 @@ const { porta, processo: servidor } = await subirServidor(['--token', TOKEN], { 
 const { porta: portaSemToken, processo: servidorSemToken, log: logSemToken } =
   await subirServidor([], { BRAPI_BASE: baseFalsa, BRAPI_TOKEN: '' });
 
+// API v2 falsa: envelope results[0].data e exige Authorization: Bearer
+const pedidosV2 = [];
+let v2Quebrada = false;
+const brapiV2Falsa = createServer((pedido, resposta) => {
+  pedidosV2.push({ url: pedido.url, autorizacao: pedido.headers.authorization || null });
+  if (v2Quebrada) return resposta.writeHead(500).end('{}');
+  const symbols = (new URL(pedido.url, 'http://local').searchParams.get('symbols') || '').split(',');
+  resposta.writeHead(200, { 'Content-Type': 'application/json' });
+  resposta.end(JSON.stringify({
+    results: symbols.map((s) => ({ data: { symbol: s, regularMarketPrice: 77.7, longName: `${s} v2` } })),
+  }));
+});
+brapiV2Falsa.listen(0);
+await once(brapiV2Falsa, 'listening');
+const baseV2Falsa = `http://127.0.0.1:${brapiV2Falsa.address().port}/api/v2/stocks`;
+
+const { porta: portaV2, processo: servidorV2 } = await subirServidor(['--token', TOKEN], {
+  BRAPI_BASE: baseFalsa,
+  BRAPI_V2_BASE: baseV2Falsa,
+});
+
 const url = (caminho) => `http://127.0.0.1:${porta}${caminho}`;
+const urlV2 = (caminho) => `http://127.0.0.1:${portaV2}${caminho}`;
 const urlSemToken = (caminho) => `http://127.0.0.1:${portaSemToken}${caminho}`;
 
 try {
@@ -129,6 +151,49 @@ try {
     const r = await fetch(url('/api/cotacoes?tickers=ITSA4'));
     assert.equal(r.headers.get('cache-control'), 'no-store');
   });
+  console.log('servidor local — API v2 da brapi');
+
+  await teste('/api/health informa qual API está em uso', async () => {
+    const corpo = await (await fetch(urlV2('/api/health'))).json();
+    assert.match(corpo.apiBrapi, /^v2/);
+  });
+
+  await teste('cotação vem da v2 e o token vai no header Bearer', async () => {
+    pedidosV2.length = 0;
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=B3SA3,BBAS3'))).json();
+    assert.equal(corpo.fonte, 'v2');
+    assert.equal(corpo.dados.B3SA3.preco, 77.7, 'preço vem de results[].data');
+    assert.equal(corpo.dados.BBAS3.nome, 'BBAS3 v2');
+    assert.equal(pedidosV2.length, 1, 'uma chamada para os dois tickers');
+    assert.equal(pedidosV2[0].autorizacao, `Bearer ${TOKEN}`);
+    assert.ok(!pedidosV2[0].url.includes(TOKEN), 'token não vai na URL');
+    assert.ok(pedidosV2[0].url.includes('symbols=B3SA3%2CBBAS3') || pedidosV2[0].url.includes('symbols=B3SA3,BBAS3'), pedidosV2[0].url);
+  });
+
+  await teste('o token da v2 não volta para o navegador', async () => {
+    const texto = await (await fetch(urlV2('/api/cotacoes?tickers=B3SA3'))).text();
+    assert.ok(!texto.includes(TOKEN));
+  });
+
+  await teste('v2 fora do ar cai para a v1 sem perder a cotação', async () => {
+    v2Quebrada = true;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=TAEE11'))).json();
+      assert.equal(corpo.fonte, 'v1', 'a fonte precisa ser reportada como v1');
+      assert.equal(corpo.dados.TAEE11.preco, 42.5, 'preço vem da v1 falsa');
+    } finally {
+      v2Quebrada = false;
+    }
+  });
+
+  await teste('pedido de fundamentos usa a v1, que traz o LPA na raiz', async () => {
+    pedidosV2.length = 0;
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
+    assert.equal(corpo.fonte, 'v1');
+    assert.equal(pedidosV2.length, 0, 'a v2 não deve ser chamada quando se pede fundamentos');
+    assert.equal(corpo.dados.CPLE6.preco, 42.5);
+  });
+
   console.log('servidor local — servidor sem BRAPI_TOKEN (caso do usuário)');
 
   await teste('/api/health avisa que não tem token', async () => {
@@ -171,7 +236,9 @@ try {
 } finally {
   servidor.kill();
   servidorSemToken.kill();
+  servidorV2.kill();
   brapiFalso.close();
+  brapiV2Falsa.close();
 }
 
 console.log(falhas ? `\n${falhas} teste(s) do servidor falharam` : '\nTodos os testes do servidor passaram');

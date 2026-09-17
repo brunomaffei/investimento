@@ -25,8 +25,9 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buscarCotacoes, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
+const { buscarCotacoes, normalizar, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
 const { buscarFundamentos, BASE: BASE_BOLSAI } = require('../assets/bolsai.js');
+const { buscarCotacoes: buscarCotacoesV2, BASE_V2 } = require('../assets/brapi-v2.js');
 
 /**
  * Lê a versão do código servido direto do .git, sem depender do git instalado.
@@ -75,10 +76,44 @@ function lerArgumentos(argv) {
     base: process.env.BRAPI_BASE || BASE,
     chaveBolsai: valor('--bolsai') || process.env.BOLSAI_KEY || '',
     baseBolsai: process.env.BOLSAI_BASE || BASE_BOLSAI,
+    baseV2: process.env.BRAPI_V2_BASE || BASE_V2,
+    // BRAPI_V2=0 desliga a v2 e usa apenas a v1.
+    usarV2: process.env.BRAPI_V2 !== '0',
   };
 }
 
-const { porta, token, base, chaveBolsai, baseBolsai } = lerArgumentos(process.argv);
+const { porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2 } = lerArgumentos(process.argv);
+
+/**
+ * Cotações pela API v2 (rota /quote?symbols=…, token no header Bearer), caindo
+ * para a v1 quando a v2 falha. O formato devolvido é o mesmo nos dois casos.
+ * @param {string[]} tickers
+ * @param {string} tokenEmUso
+ * @param {boolean} fundamentosNaBrapi
+ * @returns {Promise<{dados: Object, erros: Object, avisos: string[], fonte: string}>}
+ */
+async function consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi) {
+  // Quando se pede fundamentos pela brapi, vale a v1: a resposta comum dela traz
+  // earningsPerShare na raiz (LPA sem plano pago). Trocar pela v2 aqui poderia
+  // perder esse campo, então a v2 fica para a consulta de cotação pura.
+  if (usarV2 && !fundamentosNaBrapi) {
+    try {
+      const { dados, faltando } = await buscarCotacoesV2(tickers, { token: tokenEmUso, base: baseV2 });
+      const normalizados = {};
+      for (const [ticker, bruto] of Object.entries(dados)) {
+        normalizados[ticker] = normalizar({ ...bruto, symbol: ticker });
+      }
+      const erros = Object.fromEntries(faltando.map((t) => [t, 'A brapi (v2) não retornou este ticker.']));
+      return { dados: normalizados, erros, avisos: [], fonte: 'v2' };
+    } catch (erro) {
+      console.log(`[cotacoes] v2 indisponível (${erro.message}); usando a v1.`);
+      const resultado = await buscarCotacoes(tickers, { token: tokenEmUso, fundamentos: fundamentosNaBrapi, base });
+      return { ...resultado, avisos: [...(resultado.avisos || [])], fonte: 'v1' };
+    }
+  }
+  const resultado = await buscarCotacoes(tickers, { token: tokenEmUso, fundamentos: fundamentosNaBrapi, base });
+  return { ...resultado, avisos: [...(resultado.avisos || [])], fonte: 'v1' };
+}
 const versao = await versaoDoGit(RAIZ);
 
 const json = (resposta, codigo, corpo) => {
@@ -128,6 +163,7 @@ const servidor = createServer(async (pedido, resposta) => {
       servico: ASSINATURA_SERVIDOR,
       comToken: !!token,
       comBolsai: !!chaveBolsai,
+      apiBrapi: usarV2 ? 'v2 (com queda para v1)' : 'v1',
       versao,
     });
   }
@@ -142,7 +178,7 @@ const servidor = createServer(async (pedido, resposta) => {
     try {
       // A brapi só é consultada com módulos quando não há bolsai para os fundamentos.
       const fundamentosNaBrapi = fundamentos && !chaveBolsai;
-      const resultado = await buscarCotacoes(tickers, { token: tokenEmUso, fundamentos: fundamentosNaBrapi, base });
+      const resultado = await consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi);
       const avisos = [...(resultado.avisos || [])];
 
       if (fundamentos && chaveBolsai) {
@@ -173,7 +209,7 @@ const servidor = createServer(async (pedido, resposta) => {
       } else if (!token) {
         avisos.push('Usando o token digitado no app (o servidor subiu sem BRAPI_TOKEN).');
       }
-      console.log(`[cotacoes] ${tickers.join(',')} -> ${Object.keys(resultado.dados).length} ok, ${Object.keys(resultado.erros).length} com erro`);
+      console.log(`[cotacoes] (${resultado.fonte}) ${tickers.join(',')} -> ${Object.keys(resultado.dados).length} ok, ${Object.keys(resultado.erros).length} com erro`);
       return json(resposta, 200, { ...resultado, avisos });
     } catch (erro) {
       console.error('[cotacoes] falha:', erro.message);

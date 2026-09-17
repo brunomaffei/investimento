@@ -166,9 +166,11 @@
       ? `<td data-rotulo="Lucro projetado" class="num">${p.lucro}</td>
         <td data-rotulo="Qtd. ações" class="num">${p.qtd}</td>`
       : '';
-    const origem = ativo.cotacaoAtualizadaEm
-      ? `<span class="tag" title="Atualizado em ${new Date(ativo.cotacaoAtualizadaEm).toLocaleString('pt-BR')}">auto</span>`
-      : '';
+    const origem = ativo.erroAtualizacao
+      ? `<span class="tag erro" title="${escapar(ativo.erroAtualizacao)}">erro</span>`
+      : ativo.cotacaoAtualizadaEm
+        ? `<span class="tag" title="Atualizado em ${new Date(ativo.cotacaoAtualizadaEm).toLocaleString('pt-BR')}">auto</span>`
+        : '';
     return `
       <tr data-id="${ativo.id}">
         <td class="col-ticker">
@@ -324,7 +326,11 @@
       let atualizados = 0;
       let comFundamentosDaBolsai = 0;
       estado.ativos.forEach((ativo) => {
-        const info = dados[String(ativo.ticker || '').toUpperCase()];
+        const chave = String(ativo.ticker || '').toUpperCase();
+        const info = dados[chave];
+        // O resultado por ativo fica na própria linha: é onde o usuário olha.
+        if (erros[chave]) ativo.erroAtualizacao = erros[chave];
+        else if (info) delete ativo.erroAtualizacao;
         if (!info) return;
         atualizados++;
         // A resposta vem de fora (API ou servidor): nunca escrever "0,00"/"NaN" por
@@ -394,7 +400,6 @@
         <ul>${linhas.join('')}</ul>
         <p class="conclusao">${escapar(interpretar(etapas))}</p>
         ${estado.config.token ? '' : '<p class="dica">Sem token, só o teste de rede roda. Cole o token para testar a autenticação.</p>'}`;
-      status('Diagnóstico concluído.', '');
     } catch (erro) {
       painel.innerHTML = `<p class="conclusao">Não foi possível rodar o diagnóstico: ${escapar(erro.message)}</p>`;
     } finally {
@@ -493,7 +498,10 @@
         delete ativo.setor;
         delete ativo.cotacaoAtualizadaEm;
       }
-      if (campo === 'cotacao') delete ativo.cotacaoAtualizadaEm;
+      if (campo === 'cotacao') {
+        delete ativo.cotacaoAtualizadaEm;
+        delete ativo.erroAtualizacao;
+      }
       atualizarLinha(ativo.id);
     });
 
