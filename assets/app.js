@@ -14,6 +14,22 @@
   const el = (sel) => document.querySelector(sel);
   const novoId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
+  // O id vira seletor CSS e atributo HTML. Vindo de um arquivo importado ele pode
+  // ser qualquer coisa: repetido (duas linhas viram a mesma), número (a comparação
+  // com dataset.id, que é texto, falha e o campo não responde) ou com aspas e
+  // marcação (o arquivo executaria script na página, com acesso ao token salvo).
+  const ID_ACEITAVEL = /^[A-Za-z0-9_-]{1,40}$/;
+
+  function normalizarIds(ativos) {
+    const vistos = new Set();
+    return (ativos || []).map((ativo) => {
+      const bruto = String(ativo && ativo.id !== undefined && ativo.id !== null ? ativo.id : '');
+      const id = ID_ACEITAVEL.test(bruto) && !vistos.has(bruto) ? bruto : novoId();
+      vistos.add(id);
+      return { ...ativo, id };
+    });
+  }
+
   // Precisa existir ANTES de carregar(): a função grava aqui o aviso, e carregar()
   // é chamada logo abaixo. Declarar depois fazia o app não abrir (ReferenceError)
   // justamente no caso que este aviso existe para tratar: dado salvo ilegível.
@@ -34,7 +50,7 @@
       if (salvo && Array.isArray(salvo.ativos)) {
         return {
           config: { ...CONFIG_PADRAO, ...(salvo.config || {}) },
-          ativos: salvo.ativos.map((a) => ({ ...a, id: a.id || novoId() })),
+          ativos: normalizarIds(salvo.ativos),
         };
       }
       if (bruto) {
@@ -170,7 +186,7 @@
   }
 
   function inputCelula(ativo, campo, extra = '') {
-    return `<input class="cel-input" data-id="${ativo.id}" data-campo="${campo}" value="${escapar(ativo[campo] ?? '')}" ${extra}>`;
+    return `<input class="cel-input" data-id="${escapar(ativo.id)}" data-campo="${escapar(campo)}" value="${escapar(ativo[campo] ?? '')}" ${extra}>`;
   }
 
   function celulasPremissas(ativo, m) {
@@ -224,16 +240,16 @@
         ? `<span class="tag" title="Atualizado em ${new Date(ativo.cotacaoAtualizadaEm).toLocaleString('pt-BR')}">auto</span>`
         : '';
     return `
-      <tr data-id="${ativo.id}">
+      <tr data-id="${escapar(ativo.id)}">
         <td class="col-ticker">
           <div class="linha-ticker">
-            <input class="cel-input ticker" data-id="${ativo.id}" data-campo="ticker" value="${escapar(ativo.ticker ?? '')}" placeholder="TICKER">
-            <button class="remover" data-remover="${ativo.id}" title="Remover ativo" aria-label="Remover ativo">✕</button>
+            <input class="cel-input ticker" data-id="${escapar(ativo.id)}" data-campo="ticker" value="${escapar(ativo.ticker ?? '')}" placeholder="TICKER">
+            <button class="remover" data-remover="${escapar(ativo.id)}" title="Remover ativo" aria-label="Remover ativo">✕</button>
           </div>
           <span class="sub">${escapar(ativo.setor || ativo.nome || '')}</span>
         </td>
         <td data-rotulo="Base do cálculo">
-          <select class="cel-input" data-id="${ativo.id}" data-campo="modo">
+          <select class="cel-input" data-id="${escapar(ativo.id)}" data-campo="modo">
             <option value="lucro"${m.modo === 'lucro' ? ' selected' : ''}>Lucro proj.</option>
             <option value="lpa"${m.modo === 'lpa' ? ' selected' : ''}>LPA direto</option>
             <option value="dividendo"${m.modo === 'dividendo' ? ' selected' : ''}>Dividendo</option>
@@ -680,14 +696,15 @@
     if (!universo) return;
     const f = filtros();
     const { visiveis } = rastrearMercado(universo.ativos, estado.config, { ...f, limite: null });
-    const dec = (n) => (n === null || n === undefined || !Number.isFinite(n) ? '' : String(n).replace('.', ','));
+    // Duas casas, como na tela: "36,541666666666664" na planilha não ajuda ninguém.
+    const dec = (n, casas = 2) => (n === null || n === undefined || !Number.isFinite(n) ? '' : n.toFixed(casas).replace('.', ','));
     const cabecalho = ['Ticker', 'Tipo', 'Segmento', 'Cotacao', 'DY 12m (%)', 'Provento 12m', 'Preco-teto', 'Preco de compra', 'Margem (%)', 'Comprar', 'P/VP', 'Liquidez'];
     const corpo = visiveis.map(({ item, metricas: m }) => [
       item.ticker, item.tipo === 'fii' ? 'FII' : 'Acao', item.segmento || '',
       dec(m.cotacao), dec(item.dy), dec(m.dpa), dec(m.precoTeto), dec(m.precoAlvo),
       dec(m.margem === null ? null : m.margem * 100),
       { sim: 'SIM', nao: 'NAO', incompleto: 'FALTA DADO' }[m.veredito],
-      dec(item.pvp), dec(item.liquidez),
+      dec(item.pvp), dec(item.liquidez, 0),
     ]);
     const csv = [cabecalho, ...corpo].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
     baixar(`rastreador-b3-${hoje()}.csv`, `\ufeff${csv}`, 'text/csv;charset=utf-8');
@@ -816,7 +833,7 @@
       ? `<td data-rotulo="Simular ±" class="num">${inputCelula(ativo, 'simulacaoQtd', 'placeholder="ex.: 300"')}</td>`
       : '';
     return `
-      <tr data-id="${ativo.id}">
+      <tr data-id="${escapar(ativo.id)}">
         <td class="col-ticker"><strong>${escapar(ativo.ticker || '—')}</strong><span class="sub">${escapar(ativo.setor || ativo.nome || '')}</span></td>
         <td data-rotulo="Quantidade" class="num">${inputCelula(ativo, 'quantidade', 'placeholder="ex.: 300"')}${alerta('quantidade')}</td>
         <td data-rotulo="Preço médio" class="num">${inputCelula(ativo, 'precoMedio', 'placeholder="ex.: 28,40"')}${alerta('precoMedio')}</td>
@@ -1084,13 +1101,15 @@
 
   function exportarCarteiraCsv() {
     const { linhas, resumo } = avaliarCarteira(estado.ativos, estado.config);
-    const dec = (n) => (n === null || n === undefined || !Number.isFinite(n) ? '' : String(n).replace('.', ','));
+    // Arredondar antes de virar texto: sem isso a planilha recebia
+    // "36,541666666666664" onde a tela mostra R$ 36,54.
+    const dec = (n, casas = 2) => (n === null || n === undefined || !Number.isFinite(n) ? '' : n.toFixed(casas).replace('.', ','));
     const cabecalho = ['Ticker', 'Quantidade', 'Preco medio', 'Cotacao', 'Valor investido', 'Valor hoje',
       'Resultado', 'Resultado (%)', 'Provento anual por acao', 'Renda anual', 'Renda mensal', 'Yield sobre custo (%)'];
     const corpo = linhas
       .filter(({ metricas: m }) => m.posicao !== null)
       .map(({ ativo, metricas: m }) => [
-        ativo.ticker || '', dec(m.posicao), dec(m.precoMedio), dec(m.cotacao),
+        ativo.ticker || '', dec(m.posicao, 4), dec(m.precoMedio), dec(m.cotacao),
         dec(m.valorInvestido), dec(m.valorAtual), dec(m.resultado),
         // Fração vira ponto percentual só aqui, na saída — a planilha espera 15,5.
         dec(m.resultadoPct === null ? null : m.resultadoPct * 100),
@@ -1105,7 +1124,11 @@
     corpo.push(['TOTAL', '', '', '', dec(total.valorInvestido), dec(total.valorAtual), dec(total.resultado),
       dec(total.resultadoPct === null ? null : total.resultadoPct * 100), '', dec(total.rendaAnual), dec(total.rendaMensal),
       dec(total.yieldOnCost === null ? null : total.yieldOnCost * 100)]);
-    const csv = [cabecalho, ...corpo].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    // A planilha é lida longe da tela: sem esta linha, "Valor hoje menos investido"
+    // não fecha com "Resultado" e não há nada no arquivo explicando o recorte.
+    const nota = [`Resultado e yield sobre o custo contam so os ${total.comparaveis} ativo(s) com preco medio E cotacao; `
+      + `valor hoje e renda incluem os ${total.ativos} com posicao informada.`];
+    const csv = [cabecalho, ...corpo, [], nota].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
     baixar(`minha-carteira-${hoje()}.csv`, `﻿${csv}`, 'text/csv;charset=utf-8');
     status(`${corpo.length - 1} posição(ões) exportadas.`, 'ok');
   }
@@ -1208,7 +1231,8 @@
 
   function exportarCsv() {
     const { linhas } = avaliarCarteira(estado.ativos, estado.config);
-    const dec = (n) => (n === null || !Number.isFinite(n) ? '' : String(n).replace('.', ','));
+    // Duas casas, como na tela: "36,541666666666664" na planilha não ajuda ninguém.
+    const dec = (n, casas = 2) => (n === null || n === undefined || !Number.isFinite(n) ? '' : n.toFixed(casas).replace('.', ','));
     const cabecalho = ['Ticker', 'Setor', 'Base', 'Cotacao', 'LPA', 'DPA', 'Payout (%)', 'Yield aceitavel (%)', 'Preco-teto', 'Preco de compra', 'Margem de seguranca (%)', 'Comprar'];
     const corpo = ordenar(linhas).map(({ ativo, metricas: m }) => [
       ativo.ticker || '', ativo.setor || '', m.modo,
@@ -1232,7 +1256,7 @@
         if (!dados || !Array.isArray(dados.ativos)) throw new Error('arquivo sem a lista de ativos');
         estado = {
           config: { ...CONFIG_PADRAO, ...(dados.config || {}) },
-          ativos: dados.ativos.map((a) => ({ ...a, id: a.id || novoId() })),
+          ativos: normalizarIds(dados.ativos),
         };
         sincronizarConfig();
         sincronizarRastreador();
@@ -1279,6 +1303,9 @@
         // e a linha passava a mostrar preço de um ativo com fundamento de outro.
         delete ativo.nome;
         delete ativo.setor;
+        // Cotação buscada é do papel ANTIGO: mantida, a carteira mostrava valor e
+        // ganho de um patrimônio que não existe. Preço digitado à mão fica.
+        if (ativo.cotacaoAtualizadaEm) delete ativo.cotacao;
         delete ativo.cotacaoAtualizadaEm;
         delete ativo.erroAtualizacao;
         delete ativo.dpa12mMercado;

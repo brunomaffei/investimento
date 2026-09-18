@@ -476,6 +476,8 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
 .chave { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
 .chave.aportado { background: rgba(79,140,255,.6); border: 1px solid var(--acento); }
 .chave.reinvestido { background: var(--verde-fundo); border: 1px solid var(--verde); }
+.chave.referencia { width: 18px; height: 0; border-top: 1px dashed var(--texto-fraco); border-radius: 0; }
+.titulo-grafico .normal { text-transform: none; letter-spacing: 0; color: var(--texto-fraco); font-weight: 400; }
 
 /* Celular: cada linha vira um cartão com os rótulos à esquerda. */
 @media (max-width: 860px) {

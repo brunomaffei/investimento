@@ -211,6 +211,39 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: join(SAIDA, 'app-mobile.png'), fullPage: true });
 console.log(`  capturas em ${SAIDA}`);
 
+// JSON importado é arquivo de fora: id repetido, numérico ou com marcação não pode
+// virar linha trocada, campo que não responde nem script rodando na página.
+{
+  const { writeFileSync } = await import('node:fs');
+  const arquivo = join(SAIDA, 'carteira-suspeita.json');
+  writeFileSync(arquivo, JSON.stringify({
+    config: {},
+    ativos: [
+      { id: 'a1', ticker: 'BBAS3', modo: 'dividendo', cotacao: '23,10', dpaInformado: '2,18', quantidade: '300', precoMedio: '20,00' },
+      { id: 'a1', ticker: 'TAEE11', modo: 'dividendo', cotacao: '35,40', dpaInformado: '2,64', quantidade: '200', precoMedio: '33,00' },
+      { id: 7, ticker: 'ITSA4', modo: 'dividendo', cotacao: '10,00', dpaInformado: '0,90', quantidade: '100', precoMedio: '9,00' },
+      { id: 'x" onmouseover="0"><img src=x onerror="window.__invadido=1">', ticker: 'VALE3', modo: 'dividendo', cotacao: '60,00', dpaInformado: '3,00', quantidade: '50', precoMedio: '55,00' },
+    ],
+  }));
+  const pagina = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await pagina.goto(APP);
+  await pagina.setInputFiles('#arquivo', arquivo);
+  await pagina.waitForTimeout(600);
+
+  const ids = await pagina.evaluate(() => JSON.parse(localStorage.getItem('precoteto.v1')).ativos.map((a) => a.id));
+  ok(new Set(ids).size === ids.length, `ids repetidos são trocados na importação: ${ids.join(', ')}`);
+  ok(ids.every((i) => /^[A-Za-z0-9_-]{1,40}$/.test(i)), 'todo id vira texto simples');
+  ok(!(await pagina.evaluate(() => window.__invadido !== undefined)), 'arquivo com marcação no id não executa script');
+  ok(await pagina.locator('img').count() === 0, 'nem injeta elemento na página');
+
+  // Id que veio como número: o campo tem de responder (comparação era com texto)
+  await pagina.fill(`#tabela-posicoes tr[data-id="${ids[2]}"] input[data-campo="quantidade"]`, '999');
+  await pagina.waitForTimeout(300);
+  const guardado = await pagina.evaluate(() => JSON.parse(localStorage.getItem('precoteto.v1')).ativos[2].quantidade);
+  ok(guardado === '999', `posição digitada é guardada mesmo com id vindo numérico: ${guardado}`);
+  await pagina.close();
+}
+
 // Estado salvo ilegível: o app precisa abrir assim mesmo, avisando e guardando
 // o original — antes, um erro aqui impedia a página inteira de carregar.
 {
