@@ -18,17 +18,18 @@
  * no caso do payout, são premissa do usuário de todo jeito.
  */
 (function (root, factory) {
-  const api = factory();
+  const proventos = typeof require === 'function' ? require('./proventos.js') : root.Proventos;
+  const api = factory(proventos);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Bolsai = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Proventos) {
   'use strict';
 
   const BASE = 'https://api.usebolsai.com/api/v1';
 
   const CANDIDATOS_LPA = ['lpa', 'eps', 'lucro_por_acao', 'lucroPorAcao', 'earnings_per_share', 'earningsPerShare', 'trailing_eps', 'trailingEps'];
-  const CANDIDATOS_DATA = ['ex_date', 'exDate', 'data_com', 'dataCom', 'payment_date', 'paymentDate', 'date', 'data'];
-  const CANDIDATOS_VALOR = ['value', 'valor', 'rate', 'amount', 'dividend', 'provento'];
+  // Datas, valores e a soma de 12 meses são os mesmos de qualquer fonte: assets/proventos.js.
+  const { CANDIDATOS_DATA, CANDIDATOS_VALOR } = Proventos;
 
   const numero = (v) => {
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -61,35 +62,8 @@
     return { valor: null, chave: null };
   }
 
-  function listaDeEventos(corpo) {
-    if (Array.isArray(corpo)) return corpo;
-    for (const chave of ['dividends', 'dividendos', 'data', 'results', 'events', 'eventos']) {
-      if (Array.isArray(corpo?.[chave])) return corpo[chave];
-    }
-    return [];
-  }
-
-  /** Soma os proventos pagos nos últimos 12 meses a partir dos eventos da API. */
-  function somarProventos12m(corpo, agora = Date.now()) {
-    const eventos = listaDeEventos(corpo);
-    if (!eventos.length) return { valor: null, eventos: 0, chaveValor: null };
-    const limite = agora - 365 * 24 * 60 * 60 * 1000;
-    let soma = 0;
-    let usados = 0;
-    let chaveValor = null;
-    for (const evento of eventos) {
-      const { valor, chave } = extrair(evento || {}, CANDIDATOS_VALOR);
-      if (valor === null || valor <= 0) continue;
-      const chaveData = CANDIDATOS_DATA.find((c) => evento?.[c]);
-      const data = chaveData ? Date.parse(evento[chaveData]) : NaN;
-      // Sem data legível, o evento entra: melhor somar de menos do que inventar.
-      if (Number.isFinite(data) && data < limite) continue;
-      soma += valor;
-      usados++;
-      chaveValor = chaveValor || chave;
-    }
-    return { valor: usados ? soma : null, eventos: usados, chaveValor };
-  }
+  /** Soma os proventos de 12 meses (implementação compartilhada). */
+  const somarProventos12m = (corpo, agora) => Proventos.somar12m(corpo, agora);
 
   function mensagemDeErro(status) {
     if (status === 401 || status === 403) return 'Chave da bolsai inválida ou ausente (X-API-Key).';

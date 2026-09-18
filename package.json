@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/servidor.mjs",
     "inspecionar": "node tools/inspecionar-bolsai.mjs",
-    "test": "node test/calc.test.cjs && node test/quotes.test.cjs && node test/brapi-v2.test.cjs && node test/bolsai.test.cjs && node test/servidor.test.mjs && node test/cli.test.mjs",
+    "test": "node test/calc.test.cjs && node test/quotes.test.cjs && node test/proventos.test.cjs && node test/brapi-v2.test.cjs && node test/bolsai.test.cjs && node test/servidor.test.mjs && node test/cli.test.mjs",
     "test:ui": "node test/interface.e2e.mjs && node test/servidor-ui.e2e.mjs && node test/bolsai-integracao.e2e.mjs"
   },
   "license": "MIT"

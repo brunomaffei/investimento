@@ -56,12 +56,28 @@ const { porta: portaSemToken, processo: servidorSemToken, log: logSemToken } =
 // API v2 falsa: envelope results[0].data e exige Authorization: Bearer
 const pedidosV2 = [];
 let v2Quebrada = false;
+const hojeISO = new Date().toISOString();
 const brapiV2Falsa = createServer((pedido, resposta) => {
   pedidosV2.push({ url: pedido.url, autorizacao: pedido.headers.authorization || null });
   if (v2Quebrada) return resposta.writeHead(500).end('{}');
-  const symbols = (new URL(pedido.url, 'http://local').searchParams.get('symbols') || '').split(',');
+  const url = new URL(pedido.url, 'http://local');
+  const symbols = (url.searchParams.get('symbols') || '').split(',');
   resposta.writeHead(200, { 'Content-Type': 'application/json' });
-  resposta.end(JSON.stringify({
+
+  if (url.pathname.endsWith('/dividends')) {
+    // FII responde pela rota /fii; ação, pela /stocks.
+    const ehRotaFii = url.pathname.includes('/fii/');
+    const eventos = symbols.flatMap((s) => {
+      const ehFii = s.endsWith('11') && s.startsWith('X');
+      if (ehFii !== ehRotaFii) return [];
+      return ehFii
+        ? [{ paymentDate: hojeISO, rate: 0.09 }, { paymentDate: hojeISO, rate: 0.09 }]
+        : [{ paymentDate: hojeISO, rate: 2.5 }, { paymentDate: '2015-01-01', rate: 90 }];
+    });
+    return resposta.end(JSON.stringify({ results: [{ data: { dividends: eventos } }] }));
+  }
+
+  return resposta.end(JSON.stringify({
     results: symbols.map((s) => ({ data: { symbol: s, regularMarketPrice: 77.7, longName: `${s} v2` } })),
   }));
 });
@@ -186,12 +202,38 @@ try {
     }
   });
 
-  await teste('pedido de fundamentos usa a v1, que traz o LPA na raiz', async () => {
+  await teste('pedido de fundamentos: cotação pela v1 (LPA na raiz), dividendos pela v2', async () => {
     pedidosV2.length = 0;
     const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
-    assert.equal(corpo.fonte, 'v1');
-    assert.equal(pedidosV2.length, 0, 'a v2 não deve ser chamada quando se pede fundamentos');
+    assert.equal(corpo.fonte, 'v1', 'a cotação precisa vir da v1 para não perder o earningsPerShare da raiz');
     assert.equal(corpo.dados.CPLE6.preco, 42.5);
+    assert.ok(!pedidosV2.some((p) => p.url.includes('/quote')), 'a v2 não é usada para cotação neste caso');
+    assert.ok(pedidosV2.every((p) => p.url.includes('/dividends')), 'as chamadas à v2 aqui são só de dividendos');
+  });
+
+  console.log('servidor local — dividendos pela v2');
+
+  await teste('ação: DPA de 12 meses vem de /v2/stocks/dividends', async () => {
+    pedidosV2.length = 0;
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=BBAS3&fundamentos=1'))).json();
+    assert.equal(corpo.dados.BBAS3.dpa12m, 2.5, 'evento de 2015 não pode entrar na soma');
+    assert.equal(corpo.dados.BBAS3.fonteProventos, 'brapi stocks');
+    assert.ok(pedidosV2.some((p) => p.url.includes('/stocks/dividends?symbols=BBAS3')), JSON.stringify(pedidosV2));
+    assert.ok(pedidosV2.every((p) => p.autorizacao === `Bearer ${TOKEN}`), 'dividendos também autenticam por header');
+  });
+
+  await teste('FII: cai para /v2/fii/dividends quando a rota de ações não tem evento', async () => {
+    pedidosV2.length = 0;
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=XPLG11&fundamentos=1'))).json();
+    assert.ok(Math.abs(corpo.dados.XPLG11.dpa12m - 0.18) < 1e-9, `esperado 0,18 e veio ${corpo.dados.XPLG11.dpa12m}`);
+    assert.equal(corpo.dados.XPLG11.fonteProventos, 'brapi fii');
+    assert.ok(pedidosV2.some((p) => p.url.includes('/fii/dividends')), JSON.stringify(pedidosV2));
+  });
+
+  await teste('sem pedir fundamentos, nenhuma consulta de dividendos é feita', async () => {
+    pedidosV2.length = 0;
+    await fetch(urlV2('/api/cotacoes?tickers=BBAS3'));
+    assert.ok(!pedidosV2.some((p) => p.url.includes('/dividends')), 'dividendos só quando pedidos');
   });
 
   console.log('servidor local — servidor sem BRAPI_TOKEN (caso do usuário)');

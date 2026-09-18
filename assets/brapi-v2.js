@@ -1,8 +1,14 @@
 /**
  * Cliente da API v2 da brapi.
  *
- *   GET https://brapi.dev/api/v2/stocks/quote?symbols=B3SA3
+ *   GET https://brapi.dev/api/v2/stocks/quote?symbols=B3SA3      (cotação)
+ *   GET https://brapi.dev/api/v2/stocks/dividends?symbols=BBAS3  (dividendos e JCP)
+ *   GET https://brapi.dev/api/v2/fii/dividends?symbols=XPLG11    (mesma coisa, para FII)
  *   Authorization: Bearer <BRAPI_TOKEN>
+ *
+ * Das rotas da v2, este projeto usa só essas: a carteira precisa de cotação e do
+ * provento anual por ação. Histórico OHLCV, indicadores de FII, fundos, opções,
+ * futuros, Tesouro e câmbio não entram no cálculo de preço-teto.
  *
  * O token sai de BRAPI_TOKEN no ambiente do servidor e nunca é enviado na URL
  * (não entra em log de proxy) nem exposto ao navegador: o front conversa com
@@ -30,13 +36,16 @@
  * @property {string}   [base]      Base da API v2. Padrão: BASE_V2.
  */
 (function (root, factory) {
-  const api = factory();
+  const proventos = typeof require === 'function' ? require('./proventos.js') : root.Proventos;
+  const api = factory(proventos);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BrapiV2 = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Proventos) {
   'use strict';
 
   const BASE_V2 = 'https://brapi.dev/api/v2/stocks';
+  // Rota de FII é irmã da de ações: .../v2/stocks -> .../v2/fii
+  const paraFii = (base) => String(base || BASE_V2).replace(/\/stocks$/, '/fii');
 
   /** Erro de chamada à brapi, com o status HTTP preservado para quem decide o que fazer. */
   class ErroBrapi extends Error {
@@ -64,6 +73,76 @@
   }
 
   const tokenDoAmbiente = () => (typeof process !== 'undefined' && process.env ? process.env.BRAPI_TOKEN || '' : '');
+
+  /**
+   * Requisição autenticada a uma rota da v2, devolvendo o corpo em JSON.
+   * @param {string} caminho Ex.: "/dividends?symbols=BBAS3"
+   * @param {OpcoesV2} [opcoes]
+   * @returns {Promise<Object>}
+   * @throws {ErroBrapi}
+   */
+  async function pedir(caminho, opcoes = {}) {
+    const { fetchImpl, base = BASE_V2 } = opcoes;
+    const token = opcoes.token ?? tokenDoAmbiente();
+    const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    if (!http) throw new ErroBrapi('fetch indisponível neste ambiente.', { codigo: 'sem-fetch' });
+
+    const cabecalhos = { Accept: 'application/json' };
+    if (token) cabecalhos.Authorization = `Bearer ${token}`;
+
+    let resposta;
+    try {
+      resposta = await http(`${base}${caminho}`, { headers: cabecalhos });
+    } catch (erro) {
+      throw new ErroBrapi(`Sem conexão com a brapi (${erro.message}).`, { codigo: 'rede' });
+    }
+    if (!resposta.ok) {
+      throw new ErroBrapi(mensagemDeErro(resposta.status), { status: resposta.status, codigo: 'http' });
+    }
+    try {
+      return await resposta.json();
+    } catch {
+      throw new ErroBrapi('A brapi respondeu algo que não é JSON.', { status: 200, codigo: 'corpo-invalido' });
+    }
+  }
+
+  /**
+   * Proventos dos últimos 12 meses de um ativo, em reais por ação/cota.
+   * Tenta a rota de ações e cai para a de FII quando o ticker não é de ação —
+   * assim o app não precisa saber de antemão o tipo do ativo.
+   * @param {string} symbol
+   * @param {OpcoesV2} [opcoes]
+   * @returns {Promise<{dpa12m: number|null, eventos: number, chaveValor: string|null, rota: 'stocks'|'fii'}>}
+   * @throws {ErroBrapi} quando nenhuma das duas rotas responde.
+   */
+  async function buscarProventos12m(symbol, opcoes = {}) {
+    const alvo = String(symbol || '').trim().toUpperCase();
+    if (!alvo) throw new ErroBrapi('Informe um ticker.', { codigo: 'sem-ticker' });
+    const caminho = `/dividends?symbols=${encodeURIComponent(alvo)}`;
+    const baseAcoes = opcoes.base || BASE_V2;
+
+    /** @param {string} base @param {'stocks'|'fii'} rota */
+    const tentar = async (base, rota) => {
+      const corpo = await pedir(caminho, { ...opcoes, base });
+      const soma = Proventos.somar12m(corpo);
+      return { dpa12m: soma.valor, eventos: soma.eventos, chaveValor: soma.chaveValor, rota };
+    };
+
+    try {
+      const resultado = await tentar(baseAcoes, 'stocks');
+      if (resultado.dpa12m !== null) return resultado;
+      // Sem evento na rota de ações: pode ser FII. Vale a segunda tentativa.
+      try {
+        const comoFii = await tentar(paraFii(baseAcoes), 'fii');
+        return comoFii.dpa12m !== null ? comoFii : resultado;
+      } catch {
+        return resultado;
+      }
+    } catch (erro) {
+      if (erro.status !== 404) throw erro;
+      return tentar(paraFii(baseAcoes), 'fii');
+    }
+  }
 
   /**
    * Faz a chamada crua e devolve a lista de `results`, já validada.
@@ -155,5 +234,8 @@
     return { dados, faltando: pedidos.filter((s) => !dados[s]) };
   }
 
-  return { buscarCotacao, buscarCotacoes, pedirCotacoes, conteudo, mensagemDeErro, ErroBrapi, BASE_V2 };
+  return {
+    buscarCotacao, buscarCotacoes, buscarProventos12m, pedirCotacoes, pedir,
+    conteudo, mensagemDeErro, ErroBrapi, BASE_V2, paraFii,
+  };
 });

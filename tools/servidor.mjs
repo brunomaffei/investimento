@@ -27,7 +27,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { buscarCotacoes, normalizar, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
 const { buscarFundamentos, BASE: BASE_BOLSAI } = require('../assets/bolsai.js');
-const { buscarCotacoes: buscarCotacoesV2, BASE_V2 } = require('../assets/brapi-v2.js');
+const { buscarCotacoes: buscarCotacoesV2, buscarProventos12m, BASE_V2 } = require('../assets/brapi-v2.js');
 
 /**
  * Lê a versão do código servido direto do .git, sem depender do git instalado.
@@ -180,6 +180,25 @@ const servidor = createServer(async (pedido, resposta) => {
       const fundamentosNaBrapi = fundamentos && !chaveBolsai;
       const resultado = await consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi);
       const avisos = [...(resultado.avisos || [])];
+
+      // Sem bolsai, os proventos vêm da própria brapi: /v2/stocks/dividends para
+      // ações e /v2/fii/dividends para FII (a função cai de uma rota para a outra).
+      if (fundamentos && !chaveBolsai && usarV2) {
+        let comProventos = 0;
+        for (const [ticker, info] of Object.entries(resultado.dados)) {
+          try {
+            const proventos = await buscarProventos12m(ticker, { token: tokenEmUso, base: baseV2 });
+            if (proventos.dpa12m !== null) {
+              info.dpa12m = proventos.dpa12m;
+              info.fonteProventos = `brapi ${proventos.rota}`;
+              comProventos++;
+            }
+          } catch (erro) {
+            avisos.push(`Proventos de ${ticker} não vieram: ${erro.message}`);
+          }
+        }
+        if (comProventos) console.log(`[dividendos] ${comProventos} ativo(s) com provento de 12 meses`);
+      }
 
       if (fundamentos && chaveBolsai) {
         const extras = await buscarFundamentos(Object.keys(resultado.dados), {

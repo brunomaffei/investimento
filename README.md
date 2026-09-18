@@ -64,7 +64,7 @@ veredito. Continua sendo premissa sua — só deixou de ser uma premissa por lin
 | Cotação | ✅ sempre |
 | Nome e setor | ✅ sempre |
 | LPA | ✅ quando a brapi devolve `earningsPerShare` na resposta comum (acontece sem plano pago); senão, com `BOLSAI_KEY` |
-| DPA de 12 meses | ✅ mesma condição |
+| DPA de 12 meses | ✅ pela brapi v2 (`/stocks/dividends` ou `/fii/dividends`), ou pela bolsai |
 | Payout | ❌ nunca vem de API — mas o **payout padrão** preenche todas as linhas de uma vez |
 | Lucro projetado e nº de ações | ❌ nunca — premissa sua |
 
@@ -177,6 +177,24 @@ Causas mais comuns, em ordem:
 Se o servidor local não trouxer nada, o app tenta a consulta direto do navegador
 antes de desistir, e o status diz qual caminho funcionou.
 
+## Quais rotas da brapi v2 este projeto usa
+
+A v2 tem rota por classe de ativo. A carteira só precisa de **cotação** e
+**provento anual por ação**, então usa três:
+
+| Rota | Uso aqui |
+| --- | --- |
+| `/v2/stocks/quote` | cotação, nome e setor das ações |
+| `/v2/stocks/dividends` | dividendos e JCP → DPA dos últimos 12 meses |
+| `/v2/fii/dividends` | o mesmo, para FII (tentada quando a rota de ações não traz evento) |
+| `/v2/stocks/historical`, `/v2/fii/historical` | não usadas — o app não faz gráfico nem backtest |
+| `/v2/fii/indicators` | não usada — DY e P/VP vêm em escala ambígua; DPA em reais é direto |
+| `/v2/funds/*`, `/v2/options/*`, `/v2/futures/*`, `/v2/treasury/*`, `/v2/currency/*` | fora do escopo: a ferramenta cobre ações e FII |
+
+O app não precisa saber de antemão se o ticker é ação ou FII: consulta
+`/stocks/dividends` e, se não houver evento (ou vier 404), repete em
+`/fii/dividends`. A resposta registra qual rota respondeu (`fonteProventos`).
+
 ## API v2 da brapi
 
 As cotações usam a API v2 (`GET /api/v2/stocks/quote?symbols=B3SA3`), com o token
@@ -275,7 +293,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 126 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 147 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 90 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
@@ -297,7 +315,8 @@ assets/quotes.js              integração com a brapi.dev
 assets/app.js                 tabela editável, ordenação, import/export
 assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
-assets/brapi-v2.js            cliente da API v2 da brapi (cotação, header Bearer)
+assets/brapi-v2.js            cliente da API v2 da brapi (cotação e dividendos, header Bearer)
+assets/proventos.js           soma de proventos de 12 meses, tolerante ao formato da fonte
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido

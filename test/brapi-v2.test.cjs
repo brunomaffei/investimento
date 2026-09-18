@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { buscarCotacao, buscarCotacoes, conteudo, mensagemDeErro, ErroBrapi, BASE_V2 } = require('../assets/brapi-v2.js');
+const { buscarCotacao, buscarCotacoes, buscarProventos12m, conteudo, mensagemDeErro, ErroBrapi, BASE_V2 } = require('../assets/brapi-v2.js');
 
 let falhas = 0;
 async function teste(nome, fn) {
@@ -151,6 +151,64 @@ const envelope = (dados) => ok200({ results: dados.map((d) => ({ data: d })) });
     const http = fetchFalso(() => envelope([{ symbol: 'B3SA3' }]));
     await buscarCotacoes(['B3SA3', 'b3sa3', ' b3sa3 '], { token: 'T', fetchImpl: http });
     assert.equal(http.chamadas[0].url, `${BASE_V2}/quote?symbols=B3SA3`);
+  });
+
+  console.log('buscarProventos12m — dividendos e JCP');
+
+  await teste('ação: usa /stocks/dividends e soma 12 meses', async () => {
+    const hoje = new Date().toISOString();
+    const http = fetchFalso(() => ok200({ results: [{ data: { dividends: [
+      { paymentDate: hoje, rate: 1.5 }, { paymentDate: hoje, rate: 1.0 }, { paymentDate: '2015-01-01', rate: 80 },
+    ] } }] }));
+    const r = await buscarProventos12m('bbas3', { token: 'T', fetchImpl: http });
+    assert.equal(http.chamadas[0].url, `${BASE_V2}/dividends?symbols=BBAS3`);
+    assert.equal(http.chamadas[0].headers.Authorization, 'Bearer T');
+    assert.ok(Math.abs(r.dpa12m - 2.5) < 1e-9, `esperado 2,5 e veio ${r.dpa12m}`);
+    assert.equal(r.rota, 'stocks');
+    assert.equal(r.eventos, 2);
+  });
+
+  await teste('FII: 404 na rota de ações cai para /fii/dividends', async () => {
+    const hoje = new Date().toISOString();
+    const http = fetchFalso((url) => (url.includes('/fii/')
+      ? ok200({ results: [{ data: { dividends: [{ paymentDate: hoje, rate: 0.09 }] } }] })
+      : { ok: false, status: 404 }));
+    const r = await buscarProventos12m('XPLG11', { token: 'T', fetchImpl: http });
+    assert.equal(r.rota, 'fii');
+    assert.ok(Math.abs(r.dpa12m - 0.09) < 1e-9);
+    assert.ok(http.chamadas[1].url.includes('/fii/dividends'), http.chamadas[1].url);
+  });
+
+  await teste('rota de ações sem evento também tenta a de FII', async () => {
+    const hoje = new Date().toISOString();
+    const http = fetchFalso((url) => (url.includes('/fii/')
+      ? ok200({ results: [{ data: { dividends: [{ paymentDate: hoje, rate: 0.12 }] } }] })
+      : ok200({ results: [{ data: { dividends: [] } }] })));
+    const r = await buscarProventos12m('XPML11', { token: 'T', fetchImpl: http });
+    assert.equal(r.rota, 'fii');
+    assert.ok(Math.abs(r.dpa12m - 0.12) < 1e-9);
+  });
+
+  await teste('quando nenhuma rota tem evento, devolve null sem erro', async () => {
+    const http = fetchFalso(() => ok200({ results: [{ data: { dividends: [] } }] }));
+    const r = await buscarProventos12m('BBAS3', { token: 'T', fetchImpl: http });
+    assert.equal(r.dpa12m, null);
+    assert.equal(r.eventos, 0);
+  });
+
+  await teste('erro que não é 404 sobe (não vira FII silenciosamente)', async () => {
+    const http = fetchFalso(() => ({ ok: false, status: 401 }));
+    await assert.rejects(
+      buscarProventos12m('BBAS3', { token: 'errado', fetchImpl: http }),
+      (e) => e.status === 401,
+    );
+    assert.equal(http.chamadas.length, 1, 'não deve tentar a rota de FII com token inválido');
+  });
+
+  await teste('a chave nunca vai na URL das rotas de dividendos', async () => {
+    const http = fetchFalso(() => ok200({ results: [{ data: { dividends: [] } }] }));
+    await buscarProventos12m('BBAS3', { token: 'TOKEN-SECRETO', fetchImpl: http });
+    assert.ok(http.chamadas.every((c) => !c.url.includes('TOKEN-SECRETO')));
   });
 
   console.log('utilidades');
