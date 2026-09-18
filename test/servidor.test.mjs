@@ -256,6 +256,19 @@ try {
     assert.ok(corpo.avisos.some((a) => /CPLE6 não veio na v1 e foi buscado na v2/.test(a)), JSON.stringify(corpo.avisos));
   });
 
+  await teste('quando as duas versões falham, o erro cita as duas', async () => {
+    // A v2 falsa responde tudo; para simular a falha nas duas, derrubamos a v2.
+    v2Quebrada = true;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
+      assert.equal(corpo.dados.CPLE6, undefined);
+      assert.match(corpo.erros.CPLE6, /não encontrado/i, 'mantém o motivo da fonte principal');
+      assert.match(corpo.erros.CPLE6, /Na v2:/, 'e acrescenta o que a outra versão respondeu');
+    } finally {
+      v2Quebrada = false;
+    }
+  });
+
   await teste('sem a outra versão configurada, o erro do ticker é preservado', async () => {
     // Este servidor não tem BRAPI_V2_BASE: a tentativa de recuperação falha e o
     // ticker precisa continuar reportado, em vez de sumir da lista de erros.

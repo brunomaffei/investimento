@@ -102,23 +102,32 @@ async function recuperarFaltantes(resultado, tokenEmUso) {
   if (!faltantes.length) return [];
   const recuperados = [];
 
+  const outra = resultado.fonte === 'v1' ? 'v2' : 'v1';
+
   for (const ticker of faltantes) {
     try {
       if (resultado.fonte === 'v1') {
         const { dados } = await buscarCotacoesV2([ticker], { token: tokenEmUso, base: baseV2 });
         const bruto = dados[ticker];
-        if (!bruto) continue;
+        if (!bruto) {
+          resultado.erros[ticker] = `${resultado.erros[ticker]} A ${outra} também não retornou este ticker.`;
+          continue;
+        }
         resultado.dados[ticker] = normalizar({ ...bruto, symbol: ticker });
       } else {
         const alternativa = await buscarCotacoes([ticker], { token: tokenEmUso, fundamentos: false, base });
         const info = alternativa.dados[ticker];
-        if (!info) continue;
+        if (!info) {
+          resultado.erros[ticker] = `${resultado.erros[ticker]} A ${outra} também não retornou este ticker.`;
+          continue;
+        }
         resultado.dados[ticker] = info;
       }
       delete resultado.erros[ticker];
       recuperados.push(ticker);
-    } catch {
-      // A outra versão também não tem: o erro original continua valendo.
+    } catch (erro) {
+      // Dizer o que a outra versão respondeu evita a impressão de que nada foi tentado.
+      resultado.erros[ticker] = `${resultado.erros[ticker]} Na ${outra}: ${erro.message}`;
     }
   }
   return recuperados;

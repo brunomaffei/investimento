@@ -178,8 +178,17 @@ Causas mais comuns, em ordem:
    exige token. Basta deixar o token no campo da tela (o app repassa) ou reiniciar
    com `BRAPI_TOKEN=... npm start`.
 6. **Um ticker específico com 404.** Acontece de um papel existir numa versão da API
-   e não na outra. O servidor tenta a outra versão só para os tickers que falharam e
-   avisa quando recupera (`CPLE6 não veio na v1 e foi buscado na v2`).
+   e não na outra. O servidor tenta a outra versão só para os tickers que falharam,
+   avisa quando recupera (`CPLE6 não veio na v1 e foi buscado na v2`) e, quando as
+   duas falham, o erro da linha cita as duas. Para investigar um ticker específico:
+
+   ```bash
+   BRAPI_TOKEN=seu_token npm run ticker -- CPLE6
+   ```
+
+   O comando mostra o que cada rota responde (v1, v1 com módulos, v2, dividendos de
+   ação e de FII). 404 em todas = a brapi não tem esse código; 403 = a rota existe,
+   mas seu plano não a cobre.
 7. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
    `EXEMPLO` é ignorada de propósito.
 
@@ -302,7 +311,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 163 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 166 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
@@ -329,6 +338,7 @@ assets/proventos.js           soma de proventos de 12 meses, tolerante ao format
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido
+tools/testar-ticker.mjs       investiga um ticker em todas as rotas da brapi
 tools/atualizar-cotacoes.mjs  atualizador de preços por linha de comando
 tools/captura.mjs             gera a captura de tela do README
 test/                         testes de cálculo, de cotação e de interface

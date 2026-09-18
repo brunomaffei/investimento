@@ -36,6 +36,18 @@ brapi.listen(0);
 await once(brapi, 'listening');
 const BRAPI_BASE = `http://127.0.0.1:${brapi.address().port}/api/quote/`;
 
+// brapi v2 falsa: quote responde, dividendos são de plano pago
+const brapiV2 = createServer((pedido, resposta) => {
+  const url = new URL(pedido.url, 'http://l');
+  if (url.pathname.endsWith('/dividends')) return resposta.writeHead(403).end('{}');
+  const symbols = (url.searchParams.get('symbols') || '').split(',');
+  resposta.writeHead(200, { 'Content-Type': 'application/json' });
+  resposta.end(JSON.stringify({ results: symbols.map((s) => ({ data: { symbol: s, regularMarketPrice: 31.5 } })) }));
+});
+brapiV2.listen(0);
+await once(brapiV2, 'listening');
+const BRAPI_V2_BASE = `http://127.0.0.1:${brapiV2.address().port}/api/v2/stocks`;
+
 // bolsai falsa
 const bolsai = createServer((pedido, resposta) => {
   if (pedido.headers['x-api-key'] !== 'CHAVE') return resposta.writeHead(401).end('{}');
@@ -93,6 +105,27 @@ try {
     );
   });
 
+  console.log('testar-ticker.mjs');
+
+  await teste('mostra o que cada rota responde para um ticker', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/testar-ticker.mjs', 'CPLE6'], {
+      cwd: RAIZ,
+      env: { ...process.env, BRAPI_BASE, BRAPI_V2_BASE, BRAPI_TOKEN: 'TOKEN-DO-AMBIENTE' },
+    });
+    assert.match(stdout, /Investigando CPLE6 \(com token\)/);
+    assert.match(stdout, /v1: cotação\s+preço 19\.9/, 'a v1 falsa responde com preço');
+    assert.match(stdout, /v2: cotação\s+preço 31\.5/, 'a v2 falsa também');
+    assert.match(stdout, /v2: dividendos \(ações\)\s+HTTP 403/, 'a rota paga é reportada como 403');
+    assert.ok(!stdout.includes('TOKEN-DO-AMBIENTE'), 'o token não pode ser impresso');
+  });
+
+  await teste('sem ticker, mostra o uso', async () => {
+    await assert.rejects(
+      executar(process.execPath, ['tools/testar-ticker.mjs'], { cwd: RAIZ }),
+      (erro) => /Uso: BRAPI_TOKEN=/.test(erro.stderr),
+    );
+  });
+
   console.log('inspecionar-bolsai.mjs');
 
   await teste('inspeciona um ticker com a chave do ambiente (sem flag)', async () => {
@@ -123,6 +156,7 @@ try {
   });
 } finally {
   brapi.close();
+  brapiV2.close();
   bolsai.close();
 }
 
