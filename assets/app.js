@@ -373,17 +373,18 @@
 
       render();
       const listaErros = Object.entries(erros);
-      const fonte = comFundamentosDaBolsai
-        ? ` LPA/proventos de ${comFundamentosDaBolsai} ativo(s) pela bolsai.`
-        : '';
-      const extra = `${(avisos || []).join(' ')}${fonte}`.trim();
-      if (!listaErros.length) {
-        const quando = new Date().toLocaleString('pt-BR');
-        status(`${atualizados} ativo(s) atualizados em ${quando}${caminho}. ${extra}`.trim(), extra ? 'alerta' : 'ok');
-      } else {
-        const resumoErros = [...new Set(listaErros.map(([, motivo]) => motivo))].join(' ');
-        status(`${atualizados} atualizados. ${listaErros.length} com problema: ${resumoErros} ${extra}`.trim(), 'alerta');
-      }
+      const detalhes = [...(avisos || [])];
+      if (comFundamentosDaBolsai) detalhes.push(`LPA e proventos de ${comFundamentosDaBolsai} ativo(s) vieram da bolsai.`);
+      listaErros.forEach(([ticker, motivo]) => detalhes.push(`${ticker}: ${motivo}`));
+
+      const quando = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      // Verde quando todo mundo atualizou: aviso sobre limite de plano ou fonte
+      // usada é informação, não falha — pintar tudo de laranja parecia erro.
+      const houveFalha = listaErros.length > 0;
+      const resumo = houveFalha
+        ? `${atualizados} de ${atualizados + listaErros.length} ativos atualizados às ${quando}${caminho}.`
+        : `${atualizados} ativo(s) atualizados às ${quando}${caminho}.`;
+      status(resumo, houveFalha ? 'alerta' : 'ok', detalhes);
     } catch (erro) {
       status(`Não foi possível buscar cotações: ${erro.message}. Digite os preços à mão.`, 'erro');
     } finally {
@@ -426,10 +427,21 @@
     }
   }
 
-  function status(texto, tipo = '') {
+  /**
+   * Mensagem de status. Os detalhes (limite de plano, fonte usada, ticker que
+   * falhou) ficam recolhidos: em linha, viravam um parágrafo que parecia erro.
+   * @param {string} texto resumo curto
+   * @param {string} [tipo] 'ok' | 'alerta' | 'erro'
+   * @param {string[]} [detalhes]
+   */
+  function status(texto, tipo = '', detalhes = []) {
     const alvo = el('#status');
-    alvo.textContent = texto;
+    const lista = (detalhes || []).filter(Boolean);
     alvo.className = `status ${tipo}`;
+    alvo.innerHTML = lista.length
+      ? `${escapar(texto)} <button type="button" class="ver-detalhes" aria-expanded="false">${lista.length} aviso${lista.length > 1 ? 's' : ''}</button>
+         <ul class="detalhes" hidden>${lista.map((d) => `<li>${escapar(d)}</li>`).join('')}</ul>`
+      : escapar(texto);
   }
 
   // ------------------------------------------------------------------ import/export
@@ -557,6 +569,14 @@
 
     el('#btn-cotacoes').addEventListener('click', atualizarCotacoes);
     el('#btn-diagnostico').addEventListener('click', rodarDiagnostico);
+    el('#status').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('.ver-detalhes');
+      if (!botao) return;
+      const lista = el('#status .detalhes');
+      const aberto = !lista.hidden;
+      lista.hidden = aberto;
+      botao.setAttribute('aria-expanded', String(!aberto));
+    });
     el('#btn-json').addEventListener('click', exportarJson);
     el('#btn-csv').addEventListener('click', exportarCsv);
     el('#btn-importar').addEventListener('click', () => el('#arquivo').click());

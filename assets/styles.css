@@ -121,6 +121,20 @@ button.perigo:hover { border-color: var(--vermelho); color: #ffb4b4; }
 .status.ok { color: var(--verde); }
 .status.alerta { color: var(--ambar); }
 .status.erro { color: var(--vermelho); }
+.ver-detalhes {
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  color: inherit;
+  opacity: .85;
+}
+.status .detalhes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--texto-fraco);
+  font-size: 12px;
+}
+.status .detalhes li { margin-bottom: 2px; }
 
 .diagnostico {
   max-width: 1600px;

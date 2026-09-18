@@ -97,8 +97,8 @@ try {
   await page.check('#fundamentos');
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /bolsai/i.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
-  const st = await page.locator('#status').innerText();
-  ok(/pela bolsai/.test(st), `status credita a fonte: "${st.slice(0, 100)}…"`);
+  const st = await page.locator('#status').textContent();
+  ok(/da bolsai/.test(st), `status credita a fonte: "${st.slice(0, 120)}…"`);
   ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '8,55', 'LPA de BBAS3 preenchido automaticamente');
   ok((await linha('BBSE3').locator('input[data-campo="lpaInformado"]').inputValue()) === '4,71', 'LPA de BBSE3 preenchido automaticamente');
 

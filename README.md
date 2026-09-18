@@ -88,13 +88,14 @@ veredito. Continua sendo premissa sua — só deixou de ser uma premissa por lin
 | Cotação | ✅ sempre |
 | Nome e setor | ✅ sempre |
 | LPA | ✅ quando a brapi devolve `earningsPerShare` na resposta comum (acontece sem plano pago); senão, com `BOLSAI_KEY` |
-| DPA de 12 meses | ✅ pela brapi v2 (`/stocks/dividends` ou `/fii/dividends`), ou pela bolsai |
+| DPA de 12 meses | ✅ Yahoo (grátis, sem cadastro), brapi v2 ou bolsai |
 | Payout | ✅ **derivado**: provento pago de 12 meses ÷ LPA, quando os dois vêm da API; ou o **payout padrão**, ou o seu número na linha |
 | Lucro projetado e nº de ações | ❌ nunca — premissa sua |
 
-Ou seja: depois de atualizar as cotações, as linhas continuam em `falta payout`
-até você informar o payout de cada ativo. Isso é de propósito — payout é a sua
-leitura de quanto a empresa vai distribuir, não um dado de mercado.
+Ou seja: abrindo o app com o servidor no ar, a tabela se preenche inteira sem você
+digitar nada — o payout sai do provento pago dividido pelo LPA. Ele continua sendo
+uma premissa **sua**: digite o seu número na linha quando discordar do que o mercado
+praticou, principalmente se o yield de conferência ao lado do DPA parecer baixo.
 
 É o método de Décio Bazin: se o dividendo esperado por ação não paga o yield
 que você exige, o papel está caro para você — por melhor que a empresa seja.
@@ -121,26 +122,29 @@ Escolha por ativo, na coluna **Base**:
 ## Rotina mensal sugerida
 
 1. Clique em **↻ Atualizar cotações** (preço, setor e LPA vêm da [brapi.dev](https://brapi.dev)).
-2. Revise payout e lucro projetado dos ativos que divulgaram balanço no mês.
+2. Confira o payout derivado (`12m: …`) dos ativos que divulgaram balanço e digite o
+   seu quando discordar.
 3. Ordene pela coluna **Margem de seg.** e marque *mostrar só os SIM*.
 4. Exporte o **CSV** se quiser guardar o histórico da decisão daquele mês.
 
 ## Cotação automática
 
-A busca acontece no seu navegador, direto na [brapi.dev](https://brapi.dev). O que
-cada plano cobre muda o que o botão consegue preencher:
+A busca sai do servidor local (`npm start`), não do navegador. O que o plano da
+brapi cobre muda o que vem dela — o resto tem fonte gratuita:
 
 | Dado | Plano gratuito da brapi |
 | --- | --- |
 | Cotação | ✅ sim (15.000 requisições/mês, com token) |
 | Nome e setor | ✅ sim |
-| LPA (`defaultKeyStatistics`) | ❌ plano pago |
-| Histórico de dividendos | ❌ plano pago |
+| LPA | ✅ vem em `earningsPerShare`, na resposta comum |
+| LPA via `defaultKeyStatistics` | ❌ plano pago (o app não depende disso) |
+| Histórico de dividendos | ❌ plano pago — por isso os proventos vêm do Yahoo |
 | Tudo, em PETR4, MGLU3, VALE3 e ITUB4 | ✅ sim, e sem token — servem para testar |
 
-Por isso a caixa **buscar também LPA e dividendos** vem desmarcada. Quando marcada e
-o plano não cobrir, o app **refaz a chamada só com o preço**, atualiza a cotação e
-avisa na tela — pedir módulo pago derrubaria a requisição inteira, cotação incluída.
+A caixa **buscar também LPA e dividendos** vem marcada. Quando o plano não cobre os
+módulos, o app **refaz a chamada só com o preço**, atualiza a cotação e avisa na tela
+— pedir módulo pago derrubaria a requisição inteira, cotação incluída — e os proventos
+seguem para o Yahoo.
 
 Regras da atualização automática:
 
@@ -361,7 +365,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 
 ```bash
 npm test          # 197 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 102 verificações de interface com Chromium (precisa de playwright-core)
+npm run test:ui   # 103 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

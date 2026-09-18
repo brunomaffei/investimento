@@ -141,8 +141,9 @@ ok(/margem/i.test(await page.locator('#tabela thead th.ativa').textContent()), '
 // Cotações sem token -> mensagem clara, nada quebrado
 await page.route('**/brapi.dev/**', (r) => r.fulfill({ status: 401, body: '{}' }));
 await page.click('#btn-cotacoes');
-await page.waitForFunction(() => document.querySelector('#status').textContent.includes('problema'), null, { timeout: 15000 });
-const st = await page.locator('#status').innerText();
+// O resumo diz "0 de N atualizados"; o motivo fica na lista de avisos recolhida.
+await page.waitForFunction(() => /0 de \d+ ativos/.test(document.querySelector('#status').textContent), null, { timeout: 15000 });
+const st = await page.locator('#status').textContent();
 ok(st.toLowerCase().includes('token'), `erro 401 explicado ao usuário: "${st}"`);
 
 // Plano sem fundamentos: módulos recusados, mas a cotação tem de chegar
@@ -157,7 +158,7 @@ await page.route('**/brapi.dev/**', (r) => {
 await page.click('#btn-cotacoes');
 await page.waitForFunction(() => document.querySelector('#status').textContent.includes('plano'), null, { timeout: 15000 });
 ok((await linha('CPLE6').locator('input[data-campo="cotacao"]').inputValue()) === '12,34', 'preço atualizado mesmo sem direito aos fundamentos');
-ok(/plano/i.test(await page.locator('#status').innerText()), 'app explica que os fundamentos não vieram');
+ok(/plano/i.test(await page.locator('#status').textContent()), 'app explica que os fundamentos não vieram');
 
 // Cotação automática preenchendo preço e LPA
 await page.unroute('**/brapi.dev/**');

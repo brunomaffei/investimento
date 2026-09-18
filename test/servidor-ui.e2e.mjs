@@ -79,7 +79,7 @@ try {
   await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
   ok(true, 'atualizou sozinho ao abrir, sem clique');
   ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'cotação já preenchida na abertura');
-  ok(/um ticker por consulta/.test(await page.locator('#status').innerText()),
+  ok(/um ticker por consulta/.test(await page.locator('#status').textContent()),
     'app avisa que passou a consultar um a um (plano gratuito recusa o lote)');
   ok((await page.locator('#tabela tbody tr input[data-campo="cotacao"]').count()) === 7, 'a lista inteira segue na tela');
   ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '5,50', 'LPA da raiz da resposta preenchido sem plano pago');
@@ -106,13 +106,15 @@ try {
   await page.reload();
   await page.waitForSelector('#tabela tbody tr');
   await page.waitForTimeout(600);
-  ok((await page.locator('#status').innerText()).trim() === '', 'com "atualizar ao abrir" desmarcado, nada é consultado');
+  ok((await page.locator('#status').textContent()).trim() === '', 'com "atualizar ao abrir" desmarcado, nada é consultado');
+  // A lista de avisos precisa começar recolhida, senão o status volta a virar parágrafo.
+  ok((await page.locator('#status .detalhes').count()) === 0, 'sem consulta, sem avisos na tela');
   ok(antes, 'servidor segue respondendo');
   await page.check('#auto-atualizar');
 
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
-  const st = await page.locator('#status').innerText();
+  const st = await page.locator('#status').textContent();
   ok(/via servidor local/.test(st), `status informa o caminho usado: "${st}"`);
   ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'cotação chegou pelo servidor');
   ok((await linha('ITSA4').locator('.col-ticker .sub').innerText()).includes('Finance'), 'setor preenchido');
@@ -169,8 +171,8 @@ try {
 
   // Sem token em lugar nenhum: os tickers não-livres falham, e o app explica
   await p2.click('#btn-cotacoes');
-  await p2.waitForFunction(() => /problema|atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
-  const semNada = await p2.locator('#status').innerText();
+  await p2.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+  const semNada = await p2.locator('#status').textContent();
   ok(/token/i.test(semNada), `sem token algum, o app explica: "${semNada.slice(0, 90)}…"`);
   // O motivo também aparece na própria linha, não só no status
   ok((await linha2('BBAS3').locator('.tag.erro').count()) === 1, 'a linha ganha selo de erro');
@@ -180,7 +182,7 @@ try {
   await p2.fill('#token', 'TOKEN-DIGITADO-NA-TELA');
   await p2.click('#btn-cotacoes');
   await p2.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
-  const comTokenNaTela = await p2.locator('#status').innerText();
+  const comTokenNaTela = await p2.locator('#status').textContent();
   ok(/via servidor local/.test(comTokenNaTela), `usou o servidor: "${comTokenNaTela.slice(0, 90)}…"`);
   ok((await linha2('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31',
     'token digitado na tela é repassado ao servidor e a cotação chega');
