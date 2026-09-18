@@ -44,7 +44,22 @@ brapiFalso.listen(0);
 await once(brapiFalso, 'listening');
 const baseFalsa = `http://127.0.0.1:${brapiFalso.address().port}/api/quote/`;
 
-const { porta, processo: servidor } = await subirServidor(['--token', 'TOKEN-SECRETO'], { BRAPI_BASE: baseFalsa });
+// Yahoo falso: provento pago de 12 meses, em epoch de segundos
+const yahooFalso = createServer((pedido, resposta) => {
+  const agora = Math.floor(Date.now() / 1000);
+  resposta.writeHead(200, { 'Content-Type': 'application/json' });
+  resposta.end(JSON.stringify({ chart: { error: null, result: [{
+    meta: { regularMarketPrice: 27.31, currency: 'BRL' },
+    events: { dividends: { [agora]: { amount: 1.5 }, [agora - 300]: { amount: 1.2 } } },
+  }] } }));
+});
+yahooFalso.listen(0);
+await once(yahooFalso, 'listening');
+
+const { porta, processo: servidor } = await subirServidor(['--token', 'TOKEN-SECRETO'], {
+  BRAPI_BASE: baseFalsa,
+  YAHOO_BASE: `http://127.0.0.1:${yahooFalso.address().port}/v8/finance/chart`,
+});
 
 let servidorSemToken = null;
 const browser = await chromium.launch({ executablePath: acharChromium() });
@@ -114,6 +129,17 @@ try {
     (linhas) => linhas.map((l) => `${l.querySelector('input.ticker')?.value}: ${l.querySelector('.tag.erro')?.title}`),
   );
   ok(comErro.length === 0, `nenhuma linha fica com selo de erro (${comErro.join(' | ') || 'nenhuma'})`);
+
+  // O provento do Yahoo chega mesmo com a linha em modo "LPA direto": vira payout
+  // implícito (2,70 / 5,50 = 49%) e a linha passa a ter veredito sem digitar nada.
+  const bbas = linha('BBAS3');
+  ok(/12m R\$ 2,70/.test(await bbas.innerText()), `a linha mostra o provento pago: ${(await bbas.innerText()).replace(/\n/g, ' ')}`);
+  ok(/12m: 49%/.test(await bbas.innerText()), 'e o payout implícito derivado dele');
+  const tetoDerivado = (await bbas.locator('[data-saida="precoTeto"]').innerText()).trim();
+  // 2,70 de provento ÷ 6% de yield aceitável = R$ 45,00, sem nada digitado.
+  ok(tetoDerivado.startsWith('R$ 45,00'), `teto calculado sem premissa digitada: "${tetoDerivado}"`);
+  ok((await bbas.locator('[data-saida="veredito"]').innerText()).trim() === 'SIM', 'veredito sai sozinho');
+  ok((await page.locator('#resumo .card.alerta strong').innerText()) === '0', 'nenhuma premissa faltando');
 
   // Diagnóstico deve reconhecer o servidor
   await page.click('#btn-diagnostico');
@@ -187,6 +213,7 @@ try {
   servidor.kill();
   if (servidorSemToken) servidorSemToken.kill();
   brapiFalso.close();
+  yahooFalso.close();
 }
 
 console.log(falhas ? `\n${falhas} verificação(ões) falharam` : '\nO fluxo pelo servidor local funciona de ponta a ponta');

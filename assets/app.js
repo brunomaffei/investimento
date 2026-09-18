@@ -140,15 +140,24 @@
     const modo = m.modo;
     const lucro = modo === 'lucro' ? inputCelula(ativo, 'lucroProjetado', 'placeholder="ex.: 5,1 bi"') : vazio;
     const qtd = modo === 'lucro' ? inputCelula(ativo, 'quantidadeAcoes', 'placeholder="ex.: 3 bi"') : vazio;
+    const sugestaoPayout = m.payoutDeMercado !== null
+      ? fmt0.format(m.payoutDeMercado)
+      : parseNumero(estado.config.payoutPadrao) ?? 'ex.: 70';
+    const notaPayout = m.origemPayout === 'mercado'
+      ? `<span class="sub" title="Payout dos últimos 12 meses: dividendo pago ÷ LPA. Preencha o campo para usar sua própria premissa.">12m: ${fmt0.format(m.payoutDeMercado)}%</span>`
+      : '';
     const payout = modo === 'dividendo'
       ? `<span data-saida="payoutImplicito">${m.payoutImplicito !== null ? `${fmt2.format(m.payoutImplicito)}%` : vazio}</span>`
-      : inputCelula(ativo, 'payout', `placeholder="${escapar(parseNumero(estado.config.payoutPadrao) ?? 'ex.: 70')}"`);
+      : `${inputCelula(ativo, 'payout', `placeholder="${escapar(sugestaoPayout)}"`)}${notaPayout}`;
     const lpa = modo === 'lpa'
       ? inputCelula(ativo, 'lpaInformado', 'placeholder="ex.: 3,67"')
       : `<span data-saida="lpa">${fmtMoeda(m.lpa)}</span>`;
+    const notaProventos = m.dpaDeMercado !== null
+      ? `<span class="sub" title="Proventos dos últimos 12 meses${ativo.fonteProventos ? ` (${ativo.fonteProventos})` : ''} e o yield que isso dá no preço de hoje. Yield muito baixo costuma indicar histórico incompleto na fonte.">12m ${fmtMoeda(m.dpaDeMercado)}${m.yieldDeMercado !== null ? ` · ${fmtPct(m.yieldDeMercado, 1).replace('+', '')}` : ''}</span>`
+      : '';
     const dpa = modo === 'dividendo'
-      ? inputCelula(ativo, 'dpaInformado', 'placeholder="ex.: 2,57"')
-      : `<span data-saida="dpa">${fmtMoeda(m.dpa)}</span>`;
+      ? `${inputCelula(ativo, 'dpaInformado', 'placeholder="ex.: 2,57"')}${notaProventos}`
+      : `<span data-saida="dpa">${fmtMoeda(m.dpa)}</span>${notaProventos}`;
     return { lucro, qtd, payout, lpa, dpa };
   }
 
@@ -345,8 +354,14 @@
         if (finito(info.lpa) && ativo.modo === 'lpa' && !String(ativo.lpaInformado || '').trim()) {
           ativo.lpaInformado = fmt2.format(info.lpa);
         }
-        if (positivo(info.dpa12m) && ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
-          ativo.dpaInformado = fmt2.format(info.dpa12m);
+        // Guardar o provento pago vale para todos os modos: no modo dividendo ele
+        // preenche o campo; nos demais, vira payout implícito e número de conferência.
+        if (positivo(info.dpa12m)) {
+          ativo.dpa12mMercado = info.dpa12m;
+          ativo.fonteProventos = info.fonteProventos || null;
+          if (ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
+            ativo.dpaInformado = fmt2.format(info.dpa12m);
+          }
         }
         if (info.fonteFundamentos === 'bolsai' && (finito(info.lpa) || positivo(info.dpa12m))) {
           comFundamentosDaBolsai++;

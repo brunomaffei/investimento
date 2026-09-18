@@ -52,6 +52,19 @@ atualização sozinha — a tabela aparece com o preço de hoje, sem clique. A c
 **atualizar ao abrir** desliga esse comportamento, e a página publicada nunca tenta
 (sem servidor e sem token, não há por onde consultar).
 
+### Payout: derivado antes de ser premissa
+
+A ordem é: o payout **da linha** → o **payout padrão** da carteira → o **payout de
+mercado**, calculado como provento pago nos últimos 12 meses ÷ LPA. O último não é
+chute: são dois números de fonte dividindo um pelo outro, e a célula mostra de onde
+veio (`12m: 49%`).
+
+Ao lado do DPA, a linha exibe `12m R$ 2,70 · 9,9%` — o provento pago e o yield que
+ele representa no preço de hoje. **Esse yield é o seu número de conferência**: se
+aparecer muito abaixo do que o ativo costuma pagar, o histórico da fonte está
+incompleto, e aí o teto sai baixo demais. Digite o payout na linha para ignorar o
+valor de mercado.
+
 Para a carteira fechar a conta de uma vez, use o **payout padrão**: ele vale nas
 linhas sem payout próprio, do mesmo jeito que o yield aceitável padrão. Preço e LPA
 vêm da API, o payout vem desse campo, e todas as linhas passam a ter preço-teto e
@@ -65,7 +78,7 @@ veredito. Continua sendo premissa sua — só deixou de ser uma premissa por lin
 | Nome e setor | ✅ sempre |
 | LPA | ✅ quando a brapi devolve `earningsPerShare` na resposta comum (acontece sem plano pago); senão, com `BOLSAI_KEY` |
 | DPA de 12 meses | ✅ pela brapi v2 (`/stocks/dividends` ou `/fii/dividends`), ou pela bolsai |
-| Payout | ❌ nunca vem de API — mas o **payout padrão** preenche todas as linhas de uma vez |
+| Payout | ✅ **derivado**: provento pago de 12 meses ÷ LPA, quando os dois vêm da API; ou o **payout padrão**, ou o seu número na linha |
 | Lucro projetado e nº de ações | ❌ nunca — premissa sua |
 
 Ou seja: depois de atualizar as cotações, as linhas continuam em `falta payout`
@@ -336,8 +349,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 189 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 194 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 99 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

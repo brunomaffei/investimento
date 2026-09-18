@@ -92,15 +92,28 @@
 
     const lucro = parseNumero(ativo.lucroProjetado);
     const quantidade = positivo(parseNumero(ativo.quantidadeAcoes));
-    // Payout da linha, ou o padrão da carteira: é premissa sua nos dois casos.
+    // Payout: o da linha, o padrão da carteira ou — na falta dos dois — o que o
+    // mercado praticou nos últimos 12 meses (DPA pago ÷ LPA). O último não é
+    // premissa inventada: é o payout realizado, calculado com dados de fonte.
     const payoutDaLinha = parseNumero(ativo.payout);
-    const payout = payoutDaLinha !== null ? payoutDaLinha : payoutPadrao;
+    const dpaDeMercado = positivo(parseNumero(ativo.dpa12mMercado));
 
     let lpa = modo === 'lpa'
       ? parseNumero(ativo.lpaInformado)
       : lucro !== null && quantidade !== null
         ? lucro / quantidade
         : null;
+
+    const payoutDeMercado = dpaDeMercado !== null && lpa ? (dpaDeMercado / lpa) * 100 : null;
+    const payout = payoutDaLinha !== null
+      ? payoutDaLinha
+      : payoutPadrao !== null
+        ? payoutPadrao
+        : payoutDeMercado;
+    const origemPayout = payoutDaLinha !== null ? 'linha'
+      : payoutPadrao !== null ? 'padrao'
+        : payoutDeMercado !== null ? 'mercado' : null;
+
     let dpa = null;
 
     if (modo === 'dividendo') {
@@ -148,7 +161,13 @@
       precoAlvo,
       yieldAtual,
       payout,
-      payoutDoPadrao: payoutDaLinha === null && payout !== null,
+      origemPayout,
+      payoutDeMercado,
+      dpaDeMercado,
+      // Dividend yield do provento pago sobre o preço de hoje: número de conferência,
+      // porque histórico incompleto de proventos aparece como yield baixo demais.
+      yieldDeMercado: dpaDeMercado !== null && cotacao !== null ? dpaDeMercado / cotacao : null,
+      payoutDoPadrao: origemPayout === 'padrao',
       payoutImplicito,
       veredito,
       faltando,

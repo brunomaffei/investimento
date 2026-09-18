@@ -197,6 +197,44 @@ teste('payout zero na linha é respeitado (não cai no padrão)', () => {
   assert.deepEqual(m.faltando, ['lucro positivo']);
 });
 
+teste('payout implícito: DPA pago de 12 meses dividido pelo LPA', () => {
+  // Caso real: LPA 2,15 da brapi + DPA 0,65 do Yahoo.
+  const m = avaliarAtivo(
+    { modo: 'lpa', cotacao: '22,82', lpaInformado: '2,15', dpa12mMercado: '0,65' },
+    { yieldPadrao: 7, margemMinima: 0 },
+  );
+  perto(m.payoutDeMercado, 30.23, 0.01);
+  assert.equal(m.origemPayout, 'mercado');
+  perto(m.dpa, 0.65, 0.001);
+  perto(m.precoTeto, 9.29, 0.01);
+  assert.deepEqual(m.faltando, [], 'com payout derivado, a linha deixa de estar incompleta');
+});
+teste('a premissa do usuário vence o payout de mercado', () => {
+  const ativo = { modo: 'lpa', cotacao: 20, lpaInformado: 2, dpa12mMercado: 0.5 };
+  assert.equal(avaliarAtivo(ativo, { yieldPadrao: 6 }).origemPayout, 'mercado');
+  assert.equal(avaliarAtivo(ativo, { yieldPadrao: 6, payoutPadrao: 60 }).origemPayout, 'padrao');
+  assert.equal(avaliarAtivo({ ...ativo, payout: 80 }, { yieldPadrao: 6, payoutPadrao: 60 }).origemPayout, 'linha');
+});
+teste('yield do provento pago serve de conferência', () => {
+  const m = avaliarAtivo(
+    { modo: 'lpa', cotacao: '22,82', lpaInformado: '2,15', dpa12mMercado: '0,65' },
+    { yieldPadrao: 7 },
+  );
+  perto(m.yieldDeMercado * 100, 2.85, 0.01);
+});
+teste('sem LPA não há payout implícito: faltam os dois', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, dpa12mMercado: 1 }, { yieldPadrao: 6 });
+  assert.equal(m.payoutDeMercado, null, 'o provento sozinho não deriva payout');
+  assert.deepEqual(m.faltando, ['LPA', 'payout']);
+});
+teste('provento zerado ou negativo não vira payout', () => {
+  for (const dpa of [0, -1, 'abc']) {
+    const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 2, dpa12mMercado: dpa }, { yieldPadrao: 6 });
+    assert.equal(m.payoutDeMercado, null);
+    assert.deepEqual(m.faltando, ['payout']);
+  }
+});
+
 console.log('avaliarCarteira');
 teste('resumo conta SIM, NÃO e incompletos', () => {
   const { resumo } = avaliarCarteira(
