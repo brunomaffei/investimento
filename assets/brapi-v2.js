@@ -160,7 +160,9 @@
     const lista = (symbols || []).map((s) => String(s || '').trim().toUpperCase()).filter(Boolean);
     if (!lista.length) throw new ErroBrapi('Informe ao menos um ticker.', { codigo: 'sem-ticker' });
 
-    const url = `${base}/quote?symbols=${encodeURIComponent(lista.join(','))}`;
+    // Vírgula literal entre os símbolos (cada um escapado à parte): é o formato
+    // que a documentação mostra, e %2C nem sempre é aceito.
+    const url = `${base}/quote?symbols=${lista.map(encodeURIComponent).join(',')}`;
     const cabecalhos = { Accept: 'application/json' };
     if (token) cabecalhos.Authorization = `Bearer ${token}`;
 
@@ -213,25 +215,54 @@
     return dados;
   }
 
+  // Plano gratuito aceita um ticker por requisição: vários viram 400/413/414.
+  const STATUS_DE_LOTE = [400, 413, 414];
+
   /**
-   * Busca vários ativos numa chamada. Erros de transporte não são engolidos:
-   * a exceção sobe, porque nesse caso nenhum ticker foi atendido.
+   * Busca vários ativos. Tenta numa chamada só e, se o plano recusar o lote,
+   * repete um por um — que é o que o plano gratuito permite.
    * @param {string[]} symbols
    * @param {OpcoesV2} [opcoes]
-   * @returns {Promise<{dados: Object<string, CotacaoV2>, faltando: string[]}>}
-   * @throws {ErroBrapi}
+   * @returns {Promise<{dados: Object<string, CotacaoV2>, faltando: string[], erros: Object<string, string>, avisos: string[]}>}
+   * @throws {ErroBrapi} quando nem a consulta individual funciona.
    */
   async function buscarCotacoes(symbols, opcoes = {}) {
     const pedidos = [...new Set((symbols || []).map((s) => String(s || '').trim().toUpperCase()).filter(Boolean))];
-    const resultados = await pedirCotacoes(pedidos, opcoes);
     /** @type {Object<string, CotacaoV2>} */
     const dados = {};
-    for (const item of resultados) {
-      const info = conteudo(item);
-      const symbol = String(info?.symbol || item?.symbol || '').toUpperCase();
-      if (symbol) dados[symbol] = info;
+    /** @type {Object<string, string>} */
+    const erros = {};
+    const avisos = [];
+
+    const guardar = (itens) => {
+      for (const item of itens) {
+        const info = conteudo(item);
+        const symbol = String(info?.symbol || item?.symbol || '').toUpperCase();
+        if (symbol) dados[symbol] = info;
+      }
+    };
+
+    try {
+      guardar(await pedirCotacoes(pedidos, opcoes));
+    } catch (erro) {
+      const podeSerLote = pedidos.length > 1 && erro instanceof ErroBrapi && STATUS_DE_LOTE.includes(erro.status);
+      if (!podeSerLote) throw erro;
+
+      avisos.push('Seu plano aceita um ticker por consulta: o app passou a consultar um a um.');
+      let algumFuncionou = false;
+      for (const symbol of pedidos) {
+        try {
+          guardar(await pedirCotacoes([symbol], opcoes));
+          algumFuncionou = true;
+        } catch (falha) {
+          erros[symbol] = falha.message;
+        }
+      }
+      // Se nem sozinho funcionou, o problema não era o tamanho do lote.
+      if (!algumFuncionou) throw erro;
     }
-    return { dados, faltando: pedidos.filter((s) => !dados[s]) };
+
+    return { dados, faltando: pedidos.filter((s) => !dados[s]), erros, avisos };
   }
 
   return {

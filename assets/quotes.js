@@ -38,12 +38,16 @@
   };
 
   const STATUS_DE_PLANO = [401, 402, 403];
+  // O plano gratuito aceita um ticker por requisição: um lote com vários volta
+  // 400 (ou 413/414). Nesses casos vale repetir a consulta um a um.
+  const STATUS_DE_LOTE = [400, 413, 414];
 
   function mensagemDeErro(status) {
     if (status === 401) return 'Token inválido ou ausente (pegue um grátis em brapi.dev).';
     if (status === 403) return 'Seu plano não cobre esses dados (a cotação é gratuita; fundamentos são pagos).';
     if (status === 402 || status === 429) return 'Limite do plano atingido. Tente de novo mais tarde.';
     if (status === 404) return 'Ticker não encontrado na B3.';
+    if (status === 400) return 'A brapi recusou a consulta (HTTP 400) — no plano gratuito, um ticker por vez.';
     return `Falha na consulta (HTTP ${status}).`;
   }
 
@@ -393,6 +397,18 @@
       try {
         let retorno = await tentar(lote, fundamentos);
 
+        // Lote recusado: refaz ticker a ticker, que é o que o plano gratuito aceita.
+        if (retorno.status && lote.length > 1 && STATUS_DE_LOTE.includes(retorno.status)) {
+          avisos.add('Seu plano aceita um ticker por consulta: o app passou a consultar um a um.');
+          const resultados = [];
+          for (const ticker of lote) {
+            const individual = await tentar([ticker], fundamentos);
+            if (individual.resultados) resultados.push(...individual.resultados);
+            else erros[ticker] = mensagemDeErro(individual.status);
+          }
+          retorno = { resultados };
+        }
+
         // Plano sem direito aos módulos: refaz a chamada só com o preço.
         if (retorno.status && fundamentos && STATUS_DE_PLANO.includes(retorno.status)) {
           const semModulos = await tentar(lote, false);
@@ -413,7 +429,7 @@
           if (normalizado.ticker) dados[normalizado.ticker] = normalizado;
         });
         lote.forEach((t) => {
-          if (!dados[t]) erros[t] = 'Sem retorno da API para este ticker.';
+          if (!dados[t] && !erros[t]) erros[t] = 'Sem retorno da API para este ticker.';
         });
       } catch (erro) {
         lote.forEach((t) => { erros[t] = motivoDeFalhaDeRede(erro); });

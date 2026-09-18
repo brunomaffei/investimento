@@ -28,7 +28,9 @@ const LIVRES = ['PETR4', 'MGLU3', 'VALE3', 'ITUB4'];
 const brapiFalso = createServer((pedido, resposta) => {
   const url = new URL(pedido.url, 'http://local');
   if (url.searchParams.has('modules')) return resposta.writeHead(403).end('{}');
-  const tickers = url.pathname.split('/').pop().split(',');
+  const tickers = decodeURIComponent(url.pathname).split('/').pop().split(',');
+  // Plano gratuito: um ticker por requisição. Lote com vários volta 400.
+  if (tickers.length > 1) return resposta.writeHead(400).end('{}');
   const temToken = url.searchParams.has('token') || !!pedido.headers.authorization;
   if (!temToken && tickers.some((t) => !LIVRES.includes(t))) return resposta.writeHead(401).end('{}');
   resposta.writeHead(200, { 'Content-Type': 'application/json' });
@@ -62,6 +64,9 @@ try {
   await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
   ok(true, 'atualizou sozinho ao abrir, sem clique');
   ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'cotação já preenchida na abertura');
+  ok(/um ticker por consulta/.test(await page.locator('#status').innerText()),
+    'app avisa que passou a consultar um a um (plano gratuito recusa o lote)');
+  ok((await page.locator('#tabela tbody tr input[data-campo="cotacao"]').count()) === 7, 'a lista inteira segue na tela');
   ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '5,50', 'LPA da raiz da resposta preenchido sem plano pago');
   ok((await page.locator('#resumo .card.alerta strong').innerText()) === '6', 'faltam só os payouts (6 ativos)');
 

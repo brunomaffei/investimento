@@ -141,7 +141,8 @@ const envelope = (dados) => ok200({ results: dados.map((d) => ({ data: d })) });
     ]));
     const { dados, faltando } = await buscarCotacoes(['b3sa3', 'BBAS3', 'XPTO9'], { token: 'T', fetchImpl: http });
     assert.equal(http.chamadas.length, 1, 'uma única chamada para todos');
-    assert.equal(http.chamadas[0].url, `${BASE_V2}/quote?symbols=B3SA3%2CBBAS3%2CXPTO9`);
+    // Vírgula literal entre os símbolos, como na documentação.
+    assert.equal(http.chamadas[0].url, `${BASE_V2}/quote?symbols=B3SA3,BBAS3,XPTO9`);
     assert.equal(dados.B3SA3.regularMarketPrice, 12.3);
     assert.equal(dados.BBAS3.regularMarketPrice, 22.8);
     assert.deepEqual(faltando, ['XPTO9']);
@@ -151,6 +152,56 @@ const envelope = (dados) => ok200({ results: dados.map((d) => ({ data: d })) });
     const http = fetchFalso(() => envelope([{ symbol: 'B3SA3' }]));
     await buscarCotacoes(['B3SA3', 'b3sa3', ' b3sa3 '], { token: 'T', fetchImpl: http });
     assert.equal(http.chamadas[0].url, `${BASE_V2}/quote?symbols=B3SA3`);
+  });
+
+  console.log('lote recusado pelo plano (um ticker por consulta)');
+
+  await teste('HTTP 400 no lote faz o app consultar um a um', async () => {
+    const http = fetchFalso((url) => {
+      const lista = url.split('symbols=')[1].split(',');
+      if (lista.length > 1) return { ok: false, status: 400 };
+      return ok200({ results: lista.map((s) => ({ data: { symbol: s, regularMarketPrice: 10 } })) });
+    });
+    const { dados, avisos, faltando } = await buscarCotacoes(['BBAS3', 'ITSA4', 'TAEE11'], { token: 'T', fetchImpl: http });
+    assert.deepEqual(Object.keys(dados).sort(), ['BBAS3', 'ITSA4', 'TAEE11']);
+    assert.deepEqual(faltando, []);
+    assert.equal(http.chamadas.length, 4, '1 lote recusado + 3 individuais');
+    assert.match(avisos[0], /um ticker por consulta/);
+  });
+
+  await teste('ticker individual que falha entra em erros, sem derrubar os outros', async () => {
+    const http = fetchFalso((url) => {
+      const lista = url.split('symbols=')[1].split(',');
+      if (lista.length > 1) return { ok: false, status: 400 };
+      if (lista[0] === 'ITSA4') return { ok: false, status: 404 };
+      return ok200({ results: [{ data: { symbol: lista[0], regularMarketPrice: 10 } }] });
+    });
+    const { dados, erros } = await buscarCotacoes(['BBAS3', 'ITSA4'], { token: 'T', fetchImpl: http });
+    assert.ok(dados.BBAS3, 'o que funcionou precisa ser preservado');
+    assert.match(erros.ITSA4, /não encontrado/);
+  });
+
+  await teste('400 que não é de lote (um ticker só) sobe como erro', async () => {
+    const http = fetchFalso(() => ({ ok: false, status: 400 }));
+    await assert.rejects(
+      buscarCotacoes(['BBAS3'], { token: 'T', fetchImpl: http }),
+      (e) => e.status === 400,
+    );
+    assert.equal(http.chamadas.length, 1, 'sem lote, não há o que dividir');
+  });
+
+  await teste('se nem individualmente funcionar, o erro original sobe', async () => {
+    const http = fetchFalso(() => ({ ok: false, status: 400 }));
+    await assert.rejects(
+      buscarCotacoes(['BBAS3', 'ITSA4'], { token: 'T', fetchImpl: http }),
+      (e) => e.status === 400,
+    );
+  });
+
+  await teste('401 no lote não vira consulta um a um', async () => {
+    const http = fetchFalso(() => ({ ok: false, status: 401 }));
+    await assert.rejects(buscarCotacoes(['BBAS3', 'ITSA4'], { token: 'x', fetchImpl: http }), (e) => e.status === 401);
+    assert.equal(http.chamadas.length, 1, 'token inválido não melhora dividindo o lote');
   });
 
   console.log('buscarProventos12m — dividendos e JCP');

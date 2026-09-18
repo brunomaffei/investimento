@@ -98,13 +98,16 @@ async function consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi) {
   // perder esse campo, então a v2 fica para a consulta de cotação pura.
   if (usarV2 && !fundamentosNaBrapi) {
     try {
-      const { dados, faltando } = await buscarCotacoesV2(tickers, { token: tokenEmUso, base: baseV2 });
+      const { dados, faltando, erros: errosV2, avisos } = await buscarCotacoesV2(tickers, { token: tokenEmUso, base: baseV2 });
       const normalizados = {};
       for (const [ticker, bruto] of Object.entries(dados)) {
         normalizados[ticker] = normalizar({ ...bruto, symbol: ticker });
       }
-      const erros = Object.fromEntries(faltando.map((t) => [t, 'A brapi (v2) não retornou este ticker.']));
-      return { dados: normalizados, erros, avisos: [], fonte: 'v2' };
+      const erros = { ...errosV2 };
+      for (const t of faltando) {
+        if (!erros[t]) erros[t] = 'A brapi (v2) não retornou este ticker.';
+      }
+      return { dados: normalizados, erros, avisos: avisos || [], fonte: 'v2' };
     } catch (erro) {
       console.log(`[cotacoes] v2 indisponível (${erro.message}); usando a v1.`);
       const resultado = await buscarCotacoes(tickers, { token: tokenEmUso, fundamentos: fundamentosNaBrapi, base });

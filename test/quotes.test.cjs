@@ -93,6 +93,37 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     assert.match(erros.BBSE3, /[Tt]oken/);
   });
 
+  await teste('lote recusado com 400 vira consulta um a um', async () => {
+    const http = fetchFalso([
+      { quando: (u) => decodeURIComponent(u).split('/').pop().split('?')[0].includes(','), responde: () => ({ ok: false, status: 400 }) },
+      { quando: () => true, responde: (u) => {
+        const ticker = decodeURIComponent(u).split('/').pop().split('?')[0];
+        return resposta([{ symbol: ticker, regularMarketPrice: 22.65, earningsPerShare: 2.15 }]);
+      } },
+    ]);
+    const { dados, erros, avisos } = await buscarCotacoes(['BBAS3', 'ITSA4', 'TAEE11'], { token: 't', fetchImpl: http });
+    assert.equal(Object.keys(dados).length, 3);
+    assert.deepEqual(erros, {});
+    assert.equal(dados.BBAS3.lpa, 2.15, 'o LPA da raiz continua vindo na consulta individual');
+    assert.equal(http.chamadas.length, 4, '1 lote + 3 individuais');
+    assert.match(avisos[0], /um ticker por consulta/);
+  });
+
+  await teste('na consulta individual, quem falha é reportado por ticker', async () => {
+    const http = fetchFalso([
+      { quando: (u) => decodeURIComponent(u).split('/').pop().split('?')[0].includes(','), responde: () => ({ ok: false, status: 400 }) },
+      { quando: (u) => u.includes('ITSA4'), responde: () => ({ ok: false, status: 404 }) },
+      { quando: () => true, responde: (u) => resposta([{ symbol: decodeURIComponent(u).split('/').pop().split('?')[0], regularMarketPrice: 9 }]) },
+    ]);
+    const { dados, erros } = await buscarCotacoes(['BBAS3', 'ITSA4'], { token: 't', fetchImpl: http });
+    assert.ok(dados.BBAS3);
+    assert.match(erros.ITSA4, /não encontrado/);
+  });
+
+  await teste('mensagem de 400 explica o limite do plano gratuito', async () => {
+    assert.match(mensagemDeErro(400), /um ticker por vez/);
+  });
+
   console.log('buscarCotacoes — planos e falhas');
 
   await teste('403 nos módulos refaz a chamada só com o preço e avisa', async () => {
