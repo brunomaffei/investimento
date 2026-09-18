@@ -67,9 +67,9 @@ try {
 
   // 2. Linha a linha
   ok((await celula('a1', 'Valor hoje')) === 'R$ 6.930,00', `valor de BBAS3: ${await celula('a1', 'Valor hoje')}`);
-  ok((await celula('a1', 'Renda por mês')) === 'R$ 54,50', `renda de BBAS3: ${await celula('a1', 'Renda por mês')}`);
+  ok((await celula('a1', 'Renda média por mês')) === 'R$ 54,50', `renda de BBAS3: ${await celula('a1', 'Renda média por mês')}`);
   ok((await celula('a1', 'Yield sobre o custo')) === '10,90%', `YoC de BBAS3: ${await celula('a1', 'Yield sobre o custo')}`);
-  ok((await celula('a3', 'Renda por mês')) === 'R$ 44,10', `renda vinda de LPA x payout: ${await celula('a3', 'Renda por mês')}`);
+  ok((await celula('a3', 'Renda média por mês')) === 'R$ 44,10', `renda vinda de LPA x payout: ${await celula('a3', 'Renda média por mês')}`);
   ok(/falta preço médio/.test(await celula('a2', 'Resultado')), `quem não tem preço médio é avisado: ${await celula('a2', 'Resultado')}`);
   ok((await celula('a4', 'Valor hoje')) === '—', 'ativo sem posição não vira R$ 0,00');
 

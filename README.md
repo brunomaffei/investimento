@@ -483,8 +483,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 323 testes: cálculo, posição, projeção, gráficos, cotação, servidor e CLI
-npm run test:ui   # 169 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 324 testes: cálculo, posição, projeção, gráficos, cotação, servidor e CLI
+npm run test:ui   # 173 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

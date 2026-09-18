@@ -14,6 +14,11 @@
   const el = (sel) => document.querySelector(sel);
   const novoId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
+  // Precisa existir ANTES de carregar(): a função grava aqui o aviso, e carregar()
+  // é chamada logo abaixo. Declarar depois fazia o app não abrir (ReferenceError)
+  // justamente no caso que este aviso existe para tratar: dado salvo ilegível.
+  let avisoDeCarregamento = null;
+
   let estado = carregar();
 
   // ---------------------------------------------------------------- persistência
@@ -21,8 +26,6 @@
   // Quando o dado salvo não pode ser lido, a carteira do usuário sumia e era
   // substituída pela lista de exemplo — que o primeiro salvamento gravava por cima.
   // Agora o original é preservado em outra chave e a tela avisa.
-  let avisoDeCarregamento = null;
-
   function carregar() {
     let bruto = null;
     try {
@@ -59,11 +62,21 @@
     }
   }
 
+  let jaAvisouFalhaAoSalvar = false;
+
   function salvar() {
     try {
       localStorage.setItem(CHAVE_STORAGE, JSON.stringify(estado));
+      jaAvisouFalhaAoSalvar = false;
     } catch (erro) {
       console.warn('Não foi possível salvar:', erro);
+      // Uma vez por falha, não a cada tecla: a tela mostrava os números como se
+      // estivessem guardados e tudo sumia no recarregamento seguinte.
+      if (!jaAvisouFalhaAoSalvar) {
+        jaAvisouFalhaAoSalvar = true;
+        status('O navegador não está guardando as alterações (memória cheia ou navegação privativa). Exporte em JSON para não perder o que você digitou.',
+          'erro', [erro.message]);
+      }
     }
   }
 
@@ -759,7 +772,7 @@
     { rotulo: 'Preço médio', num: true },
     { rotulo: 'Valor hoje', num: true },
     { rotulo: 'Resultado', num: true },
-    { rotulo: 'Renda/mês', num: true },
+    { rotulo: 'Renda média/mês', num: true },
     { rotulo: 'Yield s/ custo', num: true },
   ];
   const COLUNA_SIMULACAO = { rotulo: 'Simular ±', num: true };
@@ -809,7 +822,7 @@
         <td data-rotulo="Preço médio" class="num">${inputCelula(ativo, 'precoMedio', 'placeholder="ex.: 28,40"')}${alerta('precoMedio')}</td>
         <td data-rotulo="Valor hoje" class="num forte" data-saida="valorAtual">${fmtMoeda(m.valorAtual)}</td>
         <td data-rotulo="Resultado" class="num ${classeResultado(m.resultado)}" data-saida="resultado">${celulaResultado(m)}</td>
-        <td data-rotulo="Renda por mês" class="num forte" data-saida="rendaMensal">${fmtMoeda(m.rendaMensal)}</td>
+        <td data-rotulo="Renda média por mês" class="num forte" data-saida="rendaMensal">${fmtMoeda(m.rendaMensal)}</td>
         <td data-rotulo="Yield sobre o custo" class="num" data-saida="yieldOnCost">${fmtTaxa(m.yieldOnCost)}</td>
         ${simulacao}
       </tr>`;
@@ -832,7 +845,8 @@
     if (!c.ativos) {
       return 'Nenhuma posição informada ainda. Preencha <strong>Qtd. que tenho</strong> (e o preço médio, se lembrar) para ver o quanto a carteira vale e quanto ela paga por mês.';
     }
-    const partes = [`${c.ativos} ativo(s) com posição informada`];
+    const partes = [`${c.ativos} ativo(s) com posição informada`,
+      'renda calculada com o provento (DPA) de cada linha da tabela de premissas'];
     if (c.semPrecoMedio) partes.push(`${c.semPrecoMedio} sem preço médio (fora do ganho/perda e do yield sobre o custo)`);
     if (c.semCotacao) partes.push(`${c.semCotacao} sem cotação (clique em “Atualizar cotações”)`);
     if (c.semProvento) partes.push(`${c.semProvento} sem provento definido (não entra na renda)`);

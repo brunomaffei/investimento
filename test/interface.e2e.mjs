@@ -211,7 +211,24 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: join(SAIDA, 'app-mobile.png'), fullPage: true });
 console.log(`  capturas em ${SAIDA}`);
 
+// Estado salvo ilegível: o app precisa abrir assim mesmo, avisando e guardando
+// o original — antes, um erro aqui impedia a página inteira de carregar.
+{
+  const pagina = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errosDaPagina = [];
+  pagina.on('pageerror', (e) => errosDaPagina.push(String(e)));
+  await pagina.goto(APP);
+  await pagina.evaluate(() => localStorage.setItem('precoteto.v1', '{isso nao e json'));
+  await pagina.reload();
+  await pagina.waitForTimeout(600);
+  ok(await pagina.locator('#tabela tbody tr').count() > 0, 'com dado salvo ilegível o app ainda abre');
+  ok(/ilegíveis/.test(await pagina.locator('#status').innerText()), 'e explica o que aconteceu');
+  ok(await pagina.evaluate(() => !!localStorage.getItem('precoteto.v1.ilegivel')), 'guardando uma cópia do original');
+  ok(errosDaPagina.length === 0, `sem erro de JS no carregamento (${errosDaPagina.join(' | ') || 'nenhum'})`);
+  await pagina.close();
+}
 ok(erros.length === 0, `nenhum erro de JS durante todo o fluxo (${erros.join(' | ') || 'nenhum'})`);
 await browser.close();
+
 console.log(falhas ? `\n${falhas} verificação(ões) falharam` : '\nTodas as verificações de interface passaram');
 process.exit(falhas ? 1 : 0);
