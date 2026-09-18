@@ -38,9 +38,12 @@
   };
 
   const STATUS_DE_PLANO = [401, 402, 403];
-  // O plano gratuito aceita um ticker por requisição: um lote com vários volta
-  // 400 (ou 413/414). Nesses casos vale repetir a consulta um a um.
+  // O plano gratuito aceita um ticker por requisição. A recusa do lote chega como
+  // 400/413/414, mas também como 403 quando a rota pedida é paga para vários —
+  // então 402/403 também merecem a tentativa individual. 401 não: token inválido
+  // não melhora dividindo o lote, e insistir só gastaria requisição.
   const STATUS_DE_LOTE = [400, 413, 414];
+  const VALE_TENTAR_UM_A_UM = [...STATUS_DE_LOTE, 402, 403];
 
   function mensagemDeErro(status) {
     if (status === 401) return 'Token inválido ou ausente (pegue um grátis em brapi.dev).';
@@ -393,29 +396,43 @@
       return noHeader.status === 401 ? naUrl : noHeader;
     };
 
+    // O plano não serve módulos: descoberto uma vez, vale para o resto da consulta
+    // (evita repetir o 403 em cada ticker quando o lote é dividido).
+    let planoSemModulos = false;
+
+    /**
+     * Consulta com as duas quedas compostas: se o plano recusar os módulos pagos,
+     * refaz sem eles. Precisa valer também por ticker, senão dividir o lote
+     * devolveria só 403 e nenhuma cotação.
+     */
+    const consultar = async (alvos) => {
+      const querFundamentos = fundamentos && !planoSemModulos;
+      const retorno = await tentar(alvos, querFundamentos);
+      if (!retorno.status || !querFundamentos || !STATUS_DE_PLANO.includes(retorno.status)) return retorno;
+
+      const semModulos = await tentar(alvos, false);
+      if (semModulos.resultados) {
+        planoSemModulos = true;
+        avisos.add('Fundamentos não liberados no seu plano da brapi — só a cotação foi atualizada.');
+        return semModulos;
+      }
+      return retorno;
+    };
+
     for (const lote of dividirEmLotes(limpos, LOTE)) {
       try {
-        let retorno = await tentar(lote, fundamentos);
+        let retorno = await consultar(lote);
 
         // Lote recusado: refaz ticker a ticker, que é o que o plano gratuito aceita.
-        if (retorno.status && lote.length > 1 && STATUS_DE_LOTE.includes(retorno.status)) {
+        if (retorno.status && lote.length > 1 && VALE_TENTAR_UM_A_UM.includes(retorno.status)) {
           avisos.add('Seu plano aceita um ticker por consulta: o app passou a consultar um a um.');
           const resultados = [];
           for (const ticker of lote) {
-            const individual = await tentar([ticker], fundamentos);
+            const individual = await consultar([ticker]);
             if (individual.resultados) resultados.push(...individual.resultados);
             else erros[ticker] = mensagemDeErro(individual.status);
           }
           retorno = { resultados };
-        }
-
-        // Plano sem direito aos módulos: refaz a chamada só com o preço.
-        if (retorno.status && fundamentos && STATUS_DE_PLANO.includes(retorno.status)) {
-          const semModulos = await tentar(lote, false);
-          if (semModulos.resultados) {
-            avisos.add('Fundamentos não liberados no seu plano da brapi — só a cotação foi atualizada.');
-            retorno = semModulos;
-          }
         }
 
         if (retorno.status) {

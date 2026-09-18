@@ -167,10 +167,12 @@ Causas mais comuns, em ordem:
    qual caminho funcionou.
 3. **Plano sem fundamentos.** HTTP 403 só na quarta etapa: cotação atualiza, LPA e
    dividendos não.
-4. **HTTP 400 ao atualizar vários ativos.** O plano gratuito da brapi aceita **um
-   ticker por requisição**; o app detecta a recusa do lote e passa a consultar um a
-   um automaticamente, avisando na tela. Um ticker sozinho funcionar enquanto a
-   lista inteira falha é a assinatura desse caso.
+4. **HTTP 400 (ou 403) ao atualizar vários ativos.** O plano gratuito da brapi aceita
+   **um ticker por requisição**; o app detecta a recusa do lote e passa a consultar um
+   a um, avisando na tela. Um ticker sozinho funcionar enquanto a lista inteira falha
+   é a assinatura desse caso. Quando o plano também recusa os módulos pagos, as duas
+   quedas se compõem: consulta individual **e** sem módulos, com o 403 descoberto uma
+   única vez para não repetir a tentativa paga em cada ticker.
 5. **Servidor local sem token.** O diagnóstico mostra `✅ Servidor local … sem
    BRAPI_TOKEN` e *respondeu sem dados*: fora de PETR4/MGLU3/VALE3/ITUB4 a brapi
    exige token. Basta deixar o token no campo da tela (o app repassa) ou reiniciar
@@ -297,8 +299,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 155 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 92 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 159 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,

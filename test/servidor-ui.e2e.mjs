@@ -105,6 +105,15 @@ try {
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /plano/i.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
   ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'preço mantido mesmo com fundamentos recusados');
+  // Caso do usuário: lote recusado (400) + módulos pagos recusados (403) ao mesmo
+  // tempo. As duas quedas precisam se compor, senão nenhuma linha atualiza.
+  const precosPreenchidos = await page.locator('#tabela tbody tr input[data-campo="cotacao"]')
+    .evaluateAll((campos) => campos.filter((c) => c.value.trim() !== '').length);
+  ok(precosPreenchidos === 7, `todas as linhas com preço mesmo com 400 + 403 (${precosPreenchidos}/7)`);
+  const comErro = await page.locator('#tabela tbody tr:has(.tag.erro)').evaluateAll(
+    (linhas) => linhas.map((l) => `${l.querySelector('input.ticker')?.value}: ${l.querySelector('.tag.erro')?.title}`),
+  );
+  ok(comErro.length === 0, `nenhuma linha fica com selo de erro (${comErro.join(' | ') || 'nenhuma'})`);
 
   // Diagnóstico deve reconhecer o servidor
   await page.click('#btn-diagnostico');

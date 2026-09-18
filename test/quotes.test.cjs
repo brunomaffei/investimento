@@ -124,6 +124,59 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     assert.match(mensagemDeErro(400), /um ticker por vez/);
   });
 
+  await teste('plano gratuito real: lote 400 + módulos 403 ainda atualiza tudo', async () => {
+    // Era o caso do usuário: as duas quedas precisavam se compor. Repetir o lote
+    // ticker a ticker AINDA pedindo módulos pagos devolvia 403 em todos.
+    const http = fetchFalso([
+      { quando: (u) => decodeURIComponent(u).split('/').pop().split('?')[0].includes(','), responde: () => ({ ok: false, status: 400 }) },
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: () => true, responde: (u) => {
+        const ticker = decodeURIComponent(u).split('/').pop().split('?')[0];
+        return resposta([{ symbol: ticker, regularMarketPrice: 22.65, earningsPerShare: 2.15 }]);
+      } },
+    ]);
+    const tickers = ['BBAS3', 'ITSA4', 'TAEE11', 'CPLE6', 'VIVT3', 'BBSE3'];
+    const { dados, erros, avisos } = await buscarCotacoes(tickers, { token: 't', fundamentos: true, fetchImpl: http });
+    assert.equal(Object.keys(dados).length, 6, 'todos os tickers precisam ser atualizados');
+    assert.deepEqual(erros, {});
+    assert.equal(dados.BBAS3.lpa, 2.15, 'o LPA da raiz continua vindo');
+    assert.equal(avisos.length, 2, 'avisa do lote e do plano, uma vez cada');
+  });
+
+  await teste('o 403 dos módulos é descoberto uma vez, não por ticker', async () => {
+    const comModulos = [];
+    const http = fetchFalso([
+      { quando: (u) => decodeURIComponent(u).split('/').pop().split('?')[0].includes(','), responde: () => ({ ok: false, status: 400 }) },
+      { quando: (u) => u.includes('modules='), responde: (u) => { comModulos.push(u); return { ok: false, status: 403 }; } },
+      { quando: () => true, responde: (u) => resposta([{ symbol: decodeURIComponent(u).split('/').pop().split('?')[0], regularMarketPrice: 10 }]) },
+    ]);
+    await buscarCotacoes(['BBAS3', 'ITSA4', 'TAEE11'], { token: 't', fundamentos: true, fetchImpl: http });
+    // O lote nem chega a ser avaliado pelo plano (é recusado pelo limite de tickers),
+    // então basta um 403 individual para o app parar de pedir módulos.
+    assert.equal(comModulos.length, 1, 'os demais tickers não repetem a tentativa paga');
+  });
+
+  await teste('403 no lote (rota paga para vários) também vira consulta um a um', async () => {
+    // Caso real: o servidor responde 403 ao lote COM módulos, antes de avaliar o
+    // tamanho. Só olhar 400 fazia o app desistir e marcar erro em todas as linhas.
+    const http = fetchFalso([
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: (u) => decodeURIComponent(u).split('/').pop().split('?')[0].includes(','), responde: () => ({ ok: false, status: 400 }) },
+      { quando: () => true, responde: (u) => resposta([{ symbol: decodeURIComponent(u).split('/').pop().split('?')[0], regularMarketPrice: 27.31 }]) },
+    ]);
+    const { dados, erros } = await buscarCotacoes(['BBAS3', 'ITSA4', 'TAEE11'], { token: 't', fundamentos: true, fetchImpl: http });
+    assert.equal(Object.keys(dados).length, 3, 'todas as linhas precisam atualizar');
+    assert.deepEqual(erros, {}, 'e nenhuma pode ficar marcada com erro');
+  });
+
+  await teste('401 no lote não vira consulta um a um (não adianta dividir)', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => ({ ok: false, status: 401 }) }]);
+    const { erros } = await buscarCotacoes(['BBAS3', 'ITSA4', 'TAEE11'], { token: 't', fetchImpl: http });
+    assert.equal(Object.keys(erros).length, 3);
+    // 1 lote + 1 tentativa no header (o 401 aciona a troca de autenticação)
+    assert.ok(http.chamadas.length <= 2, `esperava no máximo 2 chamadas, houve ${http.chamadas.length}`);
+  });
+
   console.log('buscarCotacoes — planos e falhas');
 
   await teste('403 nos módulos refaz a chamada só com o preço e avisa', async () => {
