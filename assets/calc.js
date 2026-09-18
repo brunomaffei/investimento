@@ -272,8 +272,16 @@
     const rendaAnual = somar(comPosicao, (m) => m.rendaAnual);
     const rendaAnualComparavel = somar(comparaveis, (m) => m.rendaAnual);
 
+    // Só quem tem valor de mercado E renda pode formar o yield da carteira: um
+    // ativo que paga provento mas está sem cotação entra na renda e não no valor,
+    // e o yield resultante — usado pela projeção — vira um número impossível.
+    const rendendo = comPosicao.filter((l) => l.metricas.valorAtual !== null && l.metricas.rendaAnual !== null);
+
     return {
       ativos: comPosicao.length,
+      // Base da projeção: valor e renda dos mesmos ativos.
+      valorQueRende: somar(rendendo, (m) => m.valorAtual),
+      rendaDeQuemTemCotacao: somar(rendendo, (m) => m.rendaAnual),
       // Valor de hoje da carteira inteira (inclui quem não lembra o preço médio).
       valorAtual: somar(comPosicao, (m) => m.valorAtual),
       valorInvestido,
@@ -314,28 +322,38 @@
     let caixa = null;
     let compras = 0;
 
+    const semCotacao = [];
     const simulados = (ativos || []).map((ativo) => {
       const delta = parseNumero(ativo.simulacaoQtd);
       if (delta === null || delta === 0) return ativo;
       const cotacao = positivo(parseNumero(ativo.cotacao));
+      // Sem cotação não há preço para a compra: simular assim prometeria renda
+      // nova sem custo nenhum. A tela avisa e a linha fica de fora.
+      if (cotacao === null) {
+        semCotacao.push(String(ativo.ticker || '').toUpperCase() || '(sem ticker)');
+        return ativo;
+      }
       const posicao = positivo(parseNumero(ativo.quantidade)) ?? 0;
       const precoMedio = positivo(parseNumero(ativo.precoMedio));
       const nova = posicao + delta;
       compras++;
 
-      if (delta > 0 && cotacao !== null) {
-        custo = (custo === null ? 0 : custo) + delta * cotacao;
-      }
-      if (delta < 0 && cotacao !== null) {
-        caixa = (caixa === null ? 0 : caixa) + Math.min(posicao, -delta) * cotacao;
-      }
+      if (delta > 0) custo = (custo === null ? 0 : custo) + delta * cotacao;
+      if (delta < 0) caixa = (caixa === null ? 0 : caixa) + Math.min(posicao, -delta) * cotacao;
       // Vendeu tudo: a linha continua na carteira (o preço-teto ainda interessa),
       // mas sem posição.
       if (nova <= 0) return { ...ativo, quantidade: 0, simulado: true };
 
-      const precoMedioNovo = delta > 0 && cotacao !== null
-        ? (precoMedio !== null ? (posicao * precoMedio + delta * cotacao) / nova : cotacao)
-        : precoMedio;
+      // Se a pessoa não informou quanto pagou pelo que já tem, o preço médio da
+      // soma é desconhecido: fingir que o antigo saiu ao preço de hoje mudaria o
+      // yield sobre o custo de toda a carteira.
+      const precoMedioNovo = delta <= 0
+        ? precoMedio
+        : posicao === 0
+          ? cotacao
+          : precoMedio !== null
+            ? (posicao * precoMedio + delta * cotacao) / nova
+            : null;
 
       return {
         ...ativo,
@@ -345,7 +363,7 @@
       };
     });
 
-    return { ativos: simulados, custo, caixa, compras };
+    return { ativos: simulados, custo, caixa, compras, semCotacao };
   }
 
   /** Avalia a carteira inteira e devolve o resumo agregado. */

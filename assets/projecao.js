@@ -8,7 +8,8 @@
  *   3. se reinvestir, a renda volta para o patrimônio
  *
  * Premissas — que são premissas mesmo, e a tela precisa dizer isso:
- *   - o yield da carteira continua o mesmo (renda anual ÷ valor de hoje);
+ *   - o yield da carteira continua o mesmo (renda anual ÷ valor de hoje, contando
+ *     só os ativos que têm os dois números);
  *   - o preço das ações não muda, então "patrimônio" cresce só por aporte e
  *     reinvestimento — nada aqui projeta valorização;
  *   - o dividendo pode crescer por ano (crescimentoAnual), padrão 0;
@@ -18,7 +19,7 @@
  * @typedef {Object} PontoDaProjecao
  * @property {number} mes          1, 2, 3…
  * @property {number} patrimonio   valor da carteira ao fim do mês
- * @property {number} aportado     quanto saiu do bolso até aqui (posição inicial + aportes)
+ * @property {number} aportado     capital de partida (valor de hoje) + aportes feitos
  * @property {number} recebido     quanto a carteira pagou até aqui
  * @property {number} rendaMensal  quanto ela pagou NESTE mês
  */

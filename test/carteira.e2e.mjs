@@ -132,6 +132,32 @@ try {
   await page.waitForTimeout(200);
   ok(await page.locator('#simulacao-resumo').isHidden(), 'desligar a simulação some com o painel');
 
+  // 7b. Venda simulada encolhe a barra do ativo vendido
+  await page.click('#btn-simular');
+  await page.waitForTimeout(150);
+  await page.fill('#tabela-posicoes tr[data-id="a3"] input[data-campo="simulacaoQtd"]', '-200');
+  await page.waitForTimeout(400);
+  const rendaTaee = await page.locator('#g-renda svg rect[data-valor]').evaluateAll((rs, alvo) => {
+    const barra = rs.find((r) => (r.querySelector('title')?.textContent || '').startsWith(alvo));
+    return barra ? Number(barra.dataset.valor) : null;
+  }, 'TAEE11');
+  ok(rendaTaee === 0 || rendaTaee === null, `vender tudo zera a barra do ativo (veio ${rendaTaee})`);
+  await page.fill('#tabela-posicoes tr[data-id="a3"] input[data-campo="simulacaoQtd"]', '');
+  await page.waitForTimeout(300);
+  await page.click('#btn-simular');
+  await page.waitForTimeout(150);
+
+  // 7c. Foco não é roubado quando a tabela é refeita
+  const campoFoco = page.locator('#tabela-posicoes tr[data-id="a1"] input[data-campo="precoMedio"]');
+  await campoFoco.click();
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(400);
+  const focoAtual = await page.evaluate(() => {
+    const a = document.activeElement;
+    return a ? `${a.dataset.id || ''}:${a.dataset.campo || ''}` : 'nenhum';
+  });
+  ok(focoAtual === 'a1:precoMedio', `o cursor fica onde estava: ${focoAtual}`);
+
   // 8. Persistência e independência do preço-teto
   await page.reload();
   await page.waitForSelector('#tabela-posicoes tbody tr');

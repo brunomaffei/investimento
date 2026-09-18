@@ -64,6 +64,29 @@ teste('ticker digitado pelo usuário não injeta HTML', () => {
   assert.ok(svg.includes('&lt;img'));
 });
 
+teste('a cauda vira "Outros" e a soma das barras continua fechando com o total', () => {
+  const itens = Array.from({ length: 18 }, (_, i) => ({ rotulo: `ATIVO${i}`, valor: 20 - i }));
+  const svg = barras(itens, { largura: 600, maximoItens: 12 });
+  const desenhados = [...svg.matchAll(/data-valor="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.equal(desenhados.length, 13, '12 ativos + Outros');
+  const soma = desenhados.reduce((s, v) => s + v, 0);
+  const esperado = itens.reduce((s, i) => s + i.valor, 0);
+  perto(soma, esperado, 0.01);
+  assert.ok(/Outros \(6\)/.test(svg));
+});
+teste('rótulo comprido é cortado em vez de passar por baixo da barra', () => {
+  const svg = barras([{ rotulo: 'FUNDOIMOBILIARIOXPTO11', valor: 10 }], { largura: 600 });
+  const visivel = svg.match(/<text class="rotulo"[^>]*>(?:<title>[^<]*<\/title>)?([^<]+)</)[1];
+  assert.ok(visivel.length < 'FUNDOIMOBILIARIOXPTO11'.length, `ficou: ${visivel}`);
+  assert.ok(visivel.endsWith('…'));
+  assert.ok(svg.includes('<title>FUNDOIMOBILIARIOXPTO11</title>'), 'o nome inteiro fica no tooltip');
+});
+teste('o eixo usa uma unidade só, escolhida pelo maior valor', () => {
+  const svg = linha([{ x: 1, y: 800 }, { x: 2, y: 1800 }], { largura: 600 });
+  const marcas = [...svg.matchAll(/<text class="valor"[^>]*>([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(marcas, ['R$ 0', 'R$ 0,9 mil', 'R$ 1,8 mil']);
+});
+
 console.log('rosca');
 teste('cada fatia recebe a fração do total', () => {
   const svg = rosca([{ rotulo: 'A', valor: 60 }, { rotulo: 'B', valor: 30 }, { rotulo: 'C', valor: 10 }], { largura: 600 });

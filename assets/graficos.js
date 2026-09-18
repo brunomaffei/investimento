@@ -36,16 +36,22 @@
 
   const fmtReais = (v) => `R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n(v))}`;
   const fmtPct = (fracao) => `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n(fracao) * 100)}%`;
-  /** Eixo com número curto: "R$ 804.545,98" espremido na lateral não se lê. */
-  const fmtEixo = (v) => {
+  /**
+   * Eixo com número curto ("R$ 804.545,98" espremido na lateral não se lê). A
+   * unidade vem do MAIOR valor do eixo e vale para todas as marcas: misturar
+   * "R$ 1,8 mil" em cima com "R$ 881,4" no meio faz comparar coisas diferentes.
+   */
+  const fmtEixo = (v, referencia = v) => {
     const valor = n(v);
+    const escala = Math.abs(n(referencia));
     const curto = (x, sufixo) => `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(x)}${sufixo}`;
-    if (Math.abs(valor) >= 1e6) return curto(valor / 1e6, ' mi');
-    if (Math.abs(valor) >= 1e3) return curto(valor / 1e3, ' mil');
+    if (valor === 0) return 'R$ 0';
+    if (escala >= 1e6) return curto(valor / 1e6, ' mi');
+    if (escala >= 1e3) return curto(valor / 1e3, ' mil');
     return curto(valor, '');
   };
 
-  const abrirSvg = (largura, altura, titulo) => `<svg viewBox="0 0 ${arredondar(largura)} ${arredondar(altura)}" width="100%" height="${arredondar(altura)}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapar(titulo)}">`;
+  const abrirSvg = (largura, altura, titulo, resumo = '') => `<svg viewBox="0 0 ${arredondar(largura)} ${arredondar(altura)}" width="100%" height="${arredondar(altura)}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="${escapar(resumo ? `${titulo}. ${resumo}` : titulo)}">`;
 
   /** Marcas do eixo X espaçadas pelo que cabe na largura disponível. */
   function marcasDoEixo(pontos, larguraUtil) {
@@ -67,7 +73,7 @@
    * @param {{largura?: number, titulo?: string, maximoFatias?: number}} [opcoes]
    */
   function rosca(fatias, opcoes = {}) {
-    const { largura = 640, titulo = 'Composição da carteira', maximoFatias = 8 } = opcoes;
+    const { largura = 640, titulo = 'Composição da carteira', maximoFatias = 8, resumo = '' } = opcoes;
     const validas = (fatias || [])
       .map((f) => ({ rotulo: String(f.rotulo || ''), valor: n(f.valor) }))
       .filter((f) => f.valor > 0)
@@ -123,7 +129,7 @@
     const centro = `<text class="centro" x="${arredondar(centroX)}" y="${arredondar(centroY - 2)}" text-anchor="middle">${fmtEixo(total)}</text>`
       + `<text class="rotulo" x="${arredondar(centroX)}" y="${arredondar(centroY + 16)}" text-anchor="middle">total</text>`;
 
-    return `${abrirSvg(largura, altura, titulo)}${aneis}${centro}${legenda}</svg>`;
+    return `${abrirSvg(largura, altura, titulo, resumo)}${aneis}${centro}${legenda}</svg>`;
   }
 
   /**
@@ -133,13 +139,25 @@
    * @param {{largura?: number, titulo?: string, formatar?: Function, maximo?: number}} [opcoes]
    */
   function barras(itens, opcoes = {}) {
-    const { largura = 640, titulo = 'Valores por ativo', formatar = fmtReais, maximoItens = 12, cor = 'var(--acento)', corExtra = 'hsl(41 92% 56%)' } = opcoes;
-    const validos = (itens || [])
+    const { largura = 640, titulo = 'Valores por ativo', formatar = fmtReais, maximoItens = 12, cor = 'var(--acento)', corExtra = 'hsl(41 92% 56%)', resumo = '' } = opcoes;
+    const ordenados = (itens || [])
       .map((i) => ({ rotulo: String(i.rotulo || ''), valor: n(i.valor), extra: Math.max(0, n(i.extra)) }))
       .filter((i) => i.valor > 0 || i.extra > 0)
-      .sort((a, b) => (b.valor + b.extra) - (a.valor + a.extra))
-      .slice(0, maximoItens);
-    if (!validos.length) return '';
+      .sort((a, b) => (b.valor + b.extra) - (a.valor + a.extra));
+    if (!ordenados.length) return '';
+
+    // A cauda vira "Outros": cortada em silêncio, a soma das barras deixava de
+    // bater com o total mostrado no cartão.
+    const validos = ordenados.slice(0, maximoItens);
+    const cauda = ordenados.slice(maximoItens);
+    if (cauda.length) {
+      validos.push({
+        rotulo: `Outros (${cauda.length})`,
+        valor: cauda.reduce((soma, i) => soma + i.valor, 0),
+        extra: cauda.reduce((soma, i) => soma + i.extra, 0),
+        cauda: true,
+      });
+    }
 
     const alturaLinha = 26;
     const altura = validos.length * alturaLinha + 12;
@@ -156,14 +174,18 @@
       const barraExtra = item.extra > 0
         ? `<rect x="${arredondar(esquerda + larguraBase)}" y="${y}" width="${arredondar(larguraExtra)}" height="15" rx="3" fill="${corExtra}" data-extra="${arredondar(item.extra)}"><title>simulação: +${escapar(formatar(item.extra))}</title></rect>`
         : '';
-      return `<text class="rotulo" x="0" y="${y + 12}">${escapar(item.rotulo)}</text>`
-        + `<rect x="${esquerda}" y="${y}" width="${arredondar(larguraBase)}" height="15" rx="3" fill="${cor}" data-valor="${arredondar(item.valor)}">`
+      // Espaço do rótulo é fixo: texto maior é cortado com reticência em vez de
+      // passar por baixo da barra.
+      const limite = Math.max(6, Math.floor((esquerda - 6) / 7));
+      const rotulo = item.rotulo.length > limite ? `${item.rotulo.slice(0, limite - 1)}…` : item.rotulo;
+      return `<text class="rotulo" x="0" y="${y + 12}"><title>${escapar(item.rotulo)}</title>${escapar(rotulo)}</text>`
+        + `<rect x="${esquerda}" y="${y}" width="${arredondar(larguraBase)}" height="15" rx="3" fill="${item.cauda ? CINZA : cor}" data-valor="${arredondar(item.valor)}">`
         + `<title>${escapar(item.rotulo)}: ${escapar(formatar(item.valor))}</title></rect>`
         + barraExtra
         + `<text class="valor" x="${arredondar(largura - 8)}" y="${y + 12}" text-anchor="end">${escapar(formatar(total))}</text>`;
     }).join('');
 
-    return `${abrirSvg(largura, altura, titulo)}${linhas}</svg>`;
+    return `${abrirSvg(largura, altura, titulo, resumo)}${linhas}</svg>`;
   }
 
   /**
@@ -192,7 +214,7 @@
     const grade = [0, 0.5, 1].map((f) => {
       const y = escalaY(teto * f);
       return `<line class="grade" x1="${margem.esquerda}" y1="${arredondar(y)}" x2="${arredondar(largura - margem.direita)}" y2="${arredondar(y)}"></line>`
-        + `<text class="valor" x="${margem.esquerda - 6}" y="${arredondar(y + 4)}" text-anchor="end">${fmtEixo(teto * f)}</text>`;
+        + `<text class="valor" x="${margem.esquerda - 6}" y="${arredondar(y + 4)}" text-anchor="end">${fmtEixo(teto * f, teto)}</text>`;
     }).join('');
 
     // Quantas marcas cabem sem os rótulos se encostarem — no celular, "1 ano" e
@@ -227,7 +249,7 @@
     const grade = [0, 0.5, 1].map((f) => {
       const y = escalaY(teto * f);
       return `<line class="grade" x1="${margem.esquerda}" y1="${arredondar(y)}" x2="${arredondar(largura - margem.direita)}" y2="${arredondar(y)}"></line>`
-        + `<text class="valor" x="${margem.esquerda - 6}" y="${arredondar(y + 4)}" text-anchor="end">${fmtEixo(teto * f)}</text>`;
+        + `<text class="valor" x="${margem.esquerda - 6}" y="${arredondar(y + 4)}" text-anchor="end">${fmtEixo(teto * f, teto)}</text>`;
     }).join('');
 
     const traco = validos.map((p, i) => `${i ? 'L' : 'M'}${arredondar(escalaX(p.x))} ${arredondar(escalaY(p.y))}`).join(' ');

@@ -374,6 +374,9 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
   padding-bottom: 6px;
 }
 .filtros .check input { min-width: 0; }
+/* Campo com número que o app não entendeu: silêncio aqui já custou caro. */
+.filtros input.nao-entendi, .cel-input.nao-entendi { border-color: var(--ambar); background: var(--ambar-fundo); }
+.sub.alerta { color: var(--ambar); }
 .filtros input:focus-visible, .filtros select:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
 
 .tag.alerta { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fundo); }

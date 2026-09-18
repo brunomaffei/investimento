@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
-const { parseNumero, avaliarAtivo, avaliarCarteira } = require('../assets/calc.js');
+const Calc = require('../assets/calc.js');
+const { parseNumero, avaliarAtivo, avaliarCarteira } = Calc;
 
 let falhas = 0;
 function teste(nome, fn) {
@@ -405,6 +406,69 @@ teste('conta quem está sem cotação e sem provento, para a tela explicar', () 
   ], {});
   assert.equal(resumo.carteira.semCotacao, 1);
   assert.equal(resumo.carteira.semProvento, 2);
+});
+
+console.log('simulação de compra');
+teste('a compra é somada à posição e o preço médio vira média ponderada', () => {
+  const { ativos, custo, compras } = Calc.simularCompras([
+    { ticker: 'BBAS3', modo: 'dividendo', cotacao: '23,10', dpaInformado: '2,18', quantidade: '300', precoMedio: '20,00', simulacaoQtd: '200' },
+  ]);
+  assert.equal(compras, 1);
+  perto(custo, 4620);
+  assert.equal(ativos[0].quantidade, 500);
+  perto(ativos[0].precoMedio, (300 * 20 + 200 * 23.1) / 500);
+});
+teste('sem cotação não dá para simular: a linha fica de fora e é reportada', () => {
+  const r = Calc.simularCompras([{ ticker: 'SEMCOT', modo: 'dividendo', dpaInformado: '2', quantidade: '100', simulacaoQtd: '100' }]);
+  assert.equal(r.compras, 0);
+  assert.equal(r.custo, null);
+  assert.deepEqual(r.semCotacao, ['SEMCOT']);
+  assert.equal(r.ativos[0].quantidade, '100', 'a posição não é alterada');
+});
+teste('sem preço médio informado, o preço médio da soma continua desconhecido', () => {
+  // Fingir que as ações antigas saíram ao preço de hoje mudaria o yield sobre o
+  // custo da carteira inteira, inventando um custo que a pessoa nunca informou.
+  const { ativos } = Calc.simularCompras([
+    { ticker: 'X', modo: 'dividendo', cotacao: '10', dpaInformado: '1', quantidade: '100', simulacaoQtd: '50' },
+  ]);
+  assert.equal(ativos[0].precoMedio, '');
+  assert.equal(Calc.avaliarAtivo(ativos[0], {}).yieldOnCost, null);
+});
+teste('posição nova estreia com o preço de hoje como preço médio', () => {
+  const { ativos } = Calc.simularCompras([{ ticker: 'NOVO', modo: 'dividendo', cotacao: '20', dpaInformado: '2', simulacaoQtd: '10' }]);
+  assert.equal(ativos[0].quantidade, 10);
+  assert.equal(ativos[0].precoMedio, 20);
+});
+teste('venda reduz a posição, devolve caixa e mantém o preço médio', () => {
+  const { ativos, caixa } = Calc.simularCompras([
+    { ticker: 'X', modo: 'dividendo', cotacao: '10', dpaInformado: '1', quantidade: '100', precoMedio: '8', simulacaoQtd: '-40' },
+  ]);
+  assert.equal(ativos[0].quantidade, 60);
+  assert.equal(ativos[0].precoMedio, 8);
+  perto(caixa, 400);
+});
+teste('venda maior que a posição zera sem virar posição negativa', () => {
+  const { ativos, caixa } = Calc.simularCompras([
+    { ticker: 'X', modo: 'dividendo', cotacao: '10', dpaInformado: '1', quantidade: '100', precoMedio: '8', simulacaoQtd: '-400' },
+  ]);
+  assert.equal(ativos[0].quantidade, 0);
+  perto(caixa, 1000, 0.01);
+});
+
+console.log('base da projeção');
+teste('yield da carteira só conta quem tem valor E renda', () => {
+  // Um ativo que paga provento mas está sem cotação entrava na renda e não no
+  // valor: o yield saía inflado e a projeção multiplicava a renda futura.
+  const { resumo } = avaliarCarteira([
+    { ticker: 'A', modo: 'dividendo', cotacao: '10', dpaInformado: '1', quantidade: '100', precoMedio: '9' },
+    { ticker: 'B', modo: 'dividendo', dpaInformado: '2', quantidade: '100' },
+  ], {});
+  const c = resumo.carteira;
+  perto(c.valorAtual, 1000);
+  perto(c.rendaAnual, 300);
+  perto(c.valorQueRende, 1000);
+  perto(c.rendaDeQuemTemCotacao, 100);
+  perto(c.rendaDeQuemTemCotacao / c.valorQueRende, 0.10, 0.0001);
 });
 
 console.log('avaliarCarteira');

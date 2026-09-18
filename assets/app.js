@@ -303,7 +303,9 @@
     if (celMargem) celMargem.className = `num forte col-margem ${classeMargem(m.margem, m.veredito)}`;
 
     atualizarResumo();
-    renderMinhaCarteira();
+    // Só a linha equivalente, não a tabela inteira: reconstruir a cada tecla fazia
+    // a digitação engasgar em carteira grande (e roubava o foco de quem digitava).
+    atualizarLinhaPosicao(id);
     salvar();
   }
 
@@ -783,9 +785,16 @@
    */
   function avisoDeNumero(ativo, campo) {
     const cru = String(ativo[campo] ?? '').trim();
-    return cru && parseNumero(cru) === null
-      ? '<span class="tag alerta" title="Não entendi esse número. Escreva só o número, ex.: 300 ou 28,40.">?</span>'
-      : '';
+    if (!cru) return '';
+    const numero = parseNumero(cru);
+    if (numero === null) {
+      return '<span class="tag alerta" title="Não entendi esse número. Escreva só o número, ex.: 300 ou 28,40.">?</span>';
+    }
+    // Zero ou negativo apagava a posição inteira em silêncio.
+    if (numero <= 0) {
+      return '<span class="tag alerta" title="Precisa ser maior que zero. Para registrar que vendeu tudo, apague o campo.">?</span>';
+    }
+    return '';
   }
 
   function linhaPosicaoHtml({ ativo, metricas: m }) {
@@ -832,6 +841,27 @@
 
   let redesenhoAgendado = null;
 
+  /**
+   * Guarda quem estava sendo digitado antes de refazer a tabela e devolve o foco
+   * depois: a atualização de cotações acontece enquanto a pessoa preenche a
+   * posição, e o cursor pulava fora do campo no meio da digitação.
+   */
+  function preservandoFoco(refazer) {
+    const ativo = document.activeElement;
+    const dentro = ativo && ativo.closest && ativo.closest('#tabela-posicoes');
+    const marca = dentro ? { id: ativo.dataset.id, campo: ativo.dataset.campo, cursor: ativo.selectionStart } : null;
+    refazer();
+    if (!marca || !marca.id) return;
+    const alvo = document.querySelector(`#tabela-posicoes tr[data-id="${marca.id}"] [data-campo="${marca.campo}"]`);
+    if (!alvo) return;
+    alvo.focus();
+    try {
+      if (marca.cursor !== null && marca.cursor !== undefined) alvo.setSelectionRange(marca.cursor, marca.cursor);
+    } catch {
+      // input que não aceita seleção (number, select): o foco já basta.
+    }
+  }
+
   function renderMinhaCarteira() {
     const secao = el('#minha-carteira');
     if (!secao || secao.hidden) return;
@@ -840,11 +870,13 @@
     el('#totais').innerHTML = cartoesDaCarteira(resumo.carteira);
     el('#totais-nota').innerHTML = notaDosTotais(resumo.carteira);
 
-    el('#tabela-posicoes thead tr').innerHTML = colunasDaPosicao()
-      .map((c) => `<th class="${c.num ? 'num' : ''}">${c.rotulo}</th>`).join('');
-    el('#tabela-posicoes tbody').innerHTML = linhas.length
-      ? linhas.map(linhaPosicaoHtml).join('')
-      : `<tr class="vazia"><td colspan="${colunasDaPosicao().length}">Sua carteira está vazia. Use o rastreador ou “+ Ativo” para incluir papéis.</td></tr>`;
+    preservandoFoco(() => {
+      el('#tabela-posicoes thead tr').innerHTML = colunasDaPosicao()
+        .map((c) => `<th class="${c.num ? 'num' : ''}">${c.rotulo}</th>`).join('');
+      el('#tabela-posicoes tbody').innerHTML = linhas.length
+        ? linhas.map(linhaPosicaoHtml).join('')
+        : `<tr class="vazia"><td colspan="${colunasDaPosicao().length}">Sua carteira está vazia. Use o rastreador ou “+ Ativo” para incluir papéis.</td></tr>`;
+    });
 
     renderSimulacao(resumo.carteira);
     agendarGraficos();
@@ -852,9 +884,16 @@
 
   /** Atualiza só as células calculadas — quem está digitando não perde o foco. */
   function atualizarLinhaPosicao(id) {
+    const secao = el('#minha-carteira');
+    if (!secao || secao.hidden) return;
     const tr = document.querySelector(`#tabela-posicoes tr[data-id="${id}"]`);
     const ativo = estado.ativos.find((a) => a.id === id);
-    if (!tr || !ativo) return;
+    // Linha ainda não desenhada (ativo recém-criado): refaz a tabela uma vez só.
+    if (!ativo) return;
+    if (!tr) {
+      renderMinhaCarteira();
+      return;
+    }
     const m = avaliarAtivo(ativo, estado.config);
     const escrever = (saida, html, classe) => {
       const alvo = tr.querySelector(`[data-saida="${saida}"]`);
@@ -885,7 +924,7 @@
       painel.hidden = true;
       return;
     }
-    const { ativos: simulados, custo, caixa, compras } = Calc.simularCompras(estado.ativos);
+    const { ativos: simulados, custo, caixa, compras, semCotacao } = Calc.simularCompras(estado.ativos);
     if (!compras) {
       painel.hidden = false;
       painel.innerHTML = '<p class="sub">Digite na coluna <strong>Simular ±</strong> quantas ações você pensa em comprar (ou use número negativo para vender). A compra é somada ao que você já tem, pelo preço de hoje.</p>';
@@ -914,7 +953,8 @@
         ${linha('Valor da carteira', carteiraAtual.valorAtual, depois.valorAtual, fmtMoeda)}
         ${linha('Yield sobre o custo', carteiraAtual.yieldOnCost, depois.yieldOnCost, (v) => fmtTaxa(v))}
       </div>
-      <p class="sub">${diferencaRenda === null ? '' : `Sua renda mensal muda em <strong>${fmtMoeda(diferencaRenda)}</strong>.`} Simulação a preço de hoje, sem corretagem e sem imposto; nada é gravado na sua posição real.</p>`;
+      <p class="sub">${diferencaRenda === null ? '' : `Sua renda mensal muda em <strong>${fmtMoeda(diferencaRenda)}</strong>.`} Simulação a preço de hoje, sem corretagem e sem imposto; nada é gravado na sua posição real.</p>
+      ${semCotacao.length ? `<p class="sub alerta">Sem cotação, não dá para simular: ${escapar(semCotacao.join(', '))}. Clique em “Atualizar cotações” ou digite o preço na tabela de premissas.</p>` : ''}`;
   }
 
   /** Redesenha no máximo a cada 150 ms: digitar não pode redesenhar 10 vezes. */
@@ -926,34 +966,50 @@
   const larguraDe = (seletor) => {
     const alvo = el(seletor);
     const medida = alvo ? alvo.clientWidth : 0;
-    // 1 unidade do viewBox = 1 pixel: assim o texto não encolhe no celular.
-    return Math.max(300, Math.min(960, medida || 640));
+    // 1 unidade do viewBox = 1 pixel: assim o texto não encolhe nem estica. O teto
+    // alto evita a faixa em branco dos dois lados no monitor largo.
+    return Math.max(240, Math.min(1600, medida || 640));
   };
 
   function desenharGraficos() {
     const secao = el('#minha-carteira');
     if (!secao || secao.hidden) return;
 
-    const base = simulando() ? Calc.simularCompras(estado.ativos).ativos : estado.ativos;
-    const { linhas, resumo } = avaliarCarteira(base, estado.config);
-    const atuais = avaliarCarteira(estado.ativos, estado.config).linhas;
+    // A rosca e a projeção seguem a carteira REAL, igual aos cartões — mostrar a
+    // hipotética sem dizer faria o desenho contradizer o número do lado.
+    const { linhas: atuais, resumo } = avaliarCarteira(estado.ativos, estado.config);
+    const simuladas = simulando() ? avaliarCarteira(Calc.simularCompras(estado.ativos).ativos, estado.config).linhas : atuais;
+    const linhas = atuais;
     const carteira = resumo.carteira;
 
     const composicao = linhas
       .filter((l) => l.metricas.valorAtual !== null)
       .map((l) => ({ rotulo: l.ativo.ticker || '—', valor: l.metricas.valorAtual }));
-    el('#g-composicao').innerHTML = Graficos.rosca(composicao, { largura: larguraDe('#g-composicao'), titulo: 'Composição da carteira por ativo' })
+    const maiorFatia = composicao.slice().sort((a, b) => b.valor - a.valor)[0];
+    el('#g-composicao').innerHTML = Graficos.rosca(composicao, {
+      largura: larguraDe('#g-composicao'),
+      titulo: 'Composição da carteira por ativo',
+      resumo: maiorFatia && carteira.valorAtual
+        ? `${composicao.length} ativos; maior posição ${maiorFatia.rotulo}, ${fmtTaxa(maiorFatia.valor / carteira.valorAtual, 0)} da carteira.`
+        : '',
+    })
       || '<p class="sub">Preencha a quantidade (e atualize as cotações) para ver onde está o seu dinheiro.</p>';
 
-    // A barra mostra a renda de hoje; o pedaço destacado é o que a simulação acrescenta.
+    // A barra mostra a renda depois da simulação; o pedaço destacado é o que a
+    // compra acrescenta. Numa VENDA a barra encolhe — antes ela ficava parada,
+    // dizendo que o ativo vendido continuava pagando.
     const rendaPorAtivo = linhas.map((l, i) => {
-      const atual = atuais[i] ? atuais[i].metricas.rendaMensal : null;
-      const simulada = l.metricas.rendaMensal;
-      const valor = atual === null ? 0 : atual;
-      const extra = simulando() && simulada !== null ? Math.max(0, simulada - valor) : 0;
-      return { rotulo: l.ativo.ticker || '—', valor, extra };
+      const atual = l.metricas.rendaMensal === null ? 0 : l.metricas.rendaMensal;
+      const simulada = simuladas[i] && simuladas[i].metricas.rendaMensal !== null ? simuladas[i].metricas.rendaMensal : 0;
+      const base = simulando() ? Math.min(atual, simulada) : atual;
+      const extra = simulando() ? Math.max(0, simulada - atual) : 0;
+      return { rotulo: l.ativo.ticker || '—', valor: base, extra };
     });
-    el('#g-renda').innerHTML = Graficos.barras(rendaPorAtivo, { largura: larguraDe('#g-renda'), titulo: 'Renda mensal por ativo' })
+    el('#g-renda').innerHTML = Graficos.barras(rendaPorAtivo, {
+      largura: larguraDe('#g-renda'),
+      titulo: 'Renda mensal por ativo',
+      resumo: carteira.rendaMensal === null ? '' : `Somam ${fmtMoeda(carteira.rendaMensal)} por mês.`,
+    })
       || '<p class="sub">Sem provento informado ainda: preencha o DPA (ou atualize as cotações com os fundamentos ligados).</p>';
 
     desenharProjecao(carteira);
@@ -962,17 +1018,24 @@
   function desenharProjecao(carteira) {
     const opcoes = opcoesDaProjecao();
     const anos = Number(opcoes.anos) || 10;
+    const semRenda = !carteira.rendaDeQuemTemCotacao || !carteira.valorQueRende;
     const { serie, resumo } = projetar({
-      patrimonio: carteira.valorAtual,
-      rendaAnual: carteira.rendaAnual,
+      // Valor e renda do MESMO conjunto de ativos: usar o valor total com a renda
+      // total inflaria o yield sempre que algum papel estivesse sem cotação.
+      patrimonio: carteira.valorQueRende,
+      rendaAnual: carteira.rendaDeQuemTemCotacao,
       aporteMensal: parseNumero(opcoes.aporteMensal) || 0,
       crescimentoAnual: parseNumero(opcoes.crescimentoAnual) || 0,
       reinvestir: opcoes.reinvestir !== false,
       meses: anos * 12,
     });
     const anual = porAno(serie);
-    if (anual.length < 2) {
-      el('#g-patrimonio').innerHTML = '<p class="sub">A projeção precisa de uma carteira com valor e provento: preencha as posições acima.</p>';
+    if (semRenda || anual.length < 2) {
+      // Projetar renda zero desenharia uma linha reta no chão e um "R$ 0,00 por
+      // mês" que parece resultado. Melhor dizer o que falta.
+      el('#g-patrimonio').innerHTML = `<p class="sub">${semRenda && carteira.ativos
+        ? 'Nenhum ativo com posição tem provento e cotação ao mesmo tempo. Atualize as cotações ou informe o DPA para o app projetar a renda.'
+        : 'A projeção precisa de uma carteira com valor e provento: preencha as posições acima.'}</p>`;
       el('#g-renda-futura').innerHTML = '';
       el('#projecao-resumo').textContent = '';
       return;
@@ -991,9 +1054,11 @@
         referencia: carteira.rendaMensal,
       },
     );
+    const aportes = Math.max(0, resumo.aportado - carteira.valorQueRende);
     el('#projecao-resumo').innerHTML = `Em ${anos} anos: patrimônio de <strong>${fmtMoeda(resumo.patrimonioFinal)}</strong>, `
       + `renda de <strong>${fmtMoeda(resumo.rendaMensalFinal)}</strong> por mês. `
-      + `Do seu bolso saíram ${fmtMoeda(resumo.aportado)}; os proventos somaram ${fmtMoeda(resumo.recebido)}.`;
+      + `Partindo dos ${fmtMoeda(carteira.valorQueRende)} de hoje, com ${fmtMoeda(aportes)} de aportes; `
+      + `os proventos somaram ${fmtMoeda(resumo.recebido)}.`;
   }
 
   function abrirMinhaCarteira(abrir) {
@@ -1053,6 +1118,24 @@
       salvar();
     });
 
+    const conferirNumero = (seletor) => {
+      // Aporte "1.000 reais" não é zero: é um número que o app não entendeu. Sem
+      // aviso, a projeção sumia com R$ 190 mil e ninguém sabia por quê.
+      const campo = el(seletor);
+      const cru = String(campo.value || '').trim();
+      const numero = parseNumero(cru);
+      const ilegivel = !!cru && numero === null;
+      // O crescimento do dividendo é limitado a ±50% ao ano; digitar 900 devolvia
+      // o mesmo resultado de 50 sem nenhum sinal de que o número foi trocado.
+      const foraDaFaixa = seletor === '#p-crescimento' && numero !== null && Math.abs(numero) > 50;
+      campo.classList.toggle('nao-entendi', ilegivel || foraDaFaixa);
+      campo.title = ilegivel
+        ? 'Não entendi esse número: escreva só o valor, ex.: 1.000 ou 1 mil.'
+        : foraDaFaixa
+          ? 'A projeção limita o crescimento do dividendo a 50% ao ano — acima disso o resultado é o mesmo.'
+          : '';
+    };
+
     const campos = [
       ['#p-aporte', 'input', (e) => ({ aporteMensal: e.target.value })],
       ['#p-anos', 'change', (e) => ({ anos: Number(e.target.value) })],
@@ -1061,6 +1144,7 @@
     ];
     campos.forEach(([sel, evt, ler]) => el(sel).addEventListener(evt, (evento) => {
       salvarProjecao(ler(evento));
+      if (evento.target.tagName === 'INPUT' && evento.target.type !== 'checkbox') conferirNumero(sel);
       agendarGraficos();
     }));
 
@@ -1078,6 +1162,13 @@
     el('#p-anos').value = String(opcoes.anos || 10);
     el('#p-crescimento').value = opcoes.crescimentoAnual ?? '';
     el('#p-reinvestir').checked = opcoes.reinvestir !== false;
+    ['#p-aporte', '#p-crescimento'].forEach((seletor) => {
+      const campo = el(seletor);
+      const cru = String(campo.value || '').trim();
+      const numero = parseNumero(cru);
+      campo.classList.toggle('nao-entendi',
+        (!!cru && numero === null) || (seletor === '#p-crescimento' && numero !== null && Math.abs(numero) > 50));
+    });
     el('#minha-carteira').hidden = estado.config.carteiraAberta === false;
     el('#btn-simular').textContent = simulando() ? '🧮 Parar simulação' : '🧮 Simular compra';
     el('#btn-simular').classList.toggle('primario', simulando());
