@@ -20,6 +20,16 @@
     // O rastreador abre junto com a página: a ideia é ver o mercado inteiro já
     // calculado, sem precisar pedir. Fecha com um clique e a escolha fica salva.
     rastreadorAberto: true,
+    // A carteira (posição, renda e gráficos) também abre junto: é a tela que
+    // responde "quanto eu tenho e quanto isso me paga".
+    carteiraAberta: true,
+    simulando: false,
+    projecao: {
+      aporteMensal: '',
+      anos: 10,
+      crescimentoAnual: '',
+      reinvestir: true,
+    },
     rastreador: {
       tipo: 'todos',
       liquidezMinima: '',

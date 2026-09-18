@@ -294,6 +294,119 @@ teste('yield fora da faixa razoável é marcado como suspeito', () => {
   assert.equal(normal.yieldSuspeito, false);
 });
 
+console.log('posição: quanto eu tenho, quanto rende');
+const posicaoBase = {
+  ticker: 'BBAS3', modo: 'dividendo', cotacao: '23,10', dpaInformado: '2,18',
+  quantidade: '300', precoMedio: '20,00',
+};
+teste('valor investido, valor de hoje e resultado', () => {
+  const m = avaliarAtivo(posicaoBase, { yieldPadrao: 6 });
+  perto(m.valorInvestido, 6000);
+  perto(m.valorAtual, 6930);
+  perto(m.resultado, 930);
+  perto(m.resultadoPct, 0.155, 0.001);
+});
+teste('renda anual e mensal saem do DPA da própria linha', () => {
+  const m = avaliarAtivo(posicaoBase, {});
+  perto(m.rendaAnual, 654);
+  perto(m.rendaMensal, 54.5);
+});
+teste('yield on cost é sobre o preço pago, não sobre a cotação', () => {
+  const m = avaliarAtivo(posicaoBase, {});
+  perto(m.yieldOnCost, 2.18 / 20, 0.0001);
+  perto(m.yieldAtual, 2.18 / 23.1, 0.0001);
+});
+teste('quantidade sem preço médio ainda dá valor de hoje e renda', () => {
+  const m = avaliarAtivo({ ...posicaoBase, precoMedio: '' }, {});
+  perto(m.valorAtual, 6930);
+  perto(m.rendaAnual, 654);
+  assert.equal(m.valorInvestido, null);
+  assert.equal(m.resultado, null);
+  assert.equal(m.yieldOnCost, null);
+  assert.equal(m.posicaoIncompleta, true);
+});
+teste('sem quantidade, tudo da posição fica null — nunca R$ 0,00', () => {
+  const m = avaliarAtivo({ ...posicaoBase, quantidade: '' }, {});
+  for (const campo of ['posicao', 'valorInvestido', 'valorAtual', 'rendaAnual', 'rendaMensal', 'resultado', 'resultadoPct']) {
+    assert.equal(m[campo], null, `${campo} deveria ser null`);
+  }
+  assert.equal(m.posicaoIncompleta, false, 'sem posição não é posição incompleta');
+});
+teste('quantidade zerada ou negativa não é posição', () => {
+  assert.equal(avaliarAtivo({ ...posicaoBase, quantidade: '0' }, {}).posicao, null);
+  assert.equal(avaliarAtivo({ ...posicaoBase, quantidade: '-300' }, {}).posicao, null);
+});
+teste('preço médio zero não gera yield infinito', () => {
+  const m = avaliarAtivo({ ...posicaoBase, precoMedio: '0' }, {});
+  assert.equal(m.yieldOnCost, null);
+  assert.equal(m.resultadoPct, null);
+});
+teste('quantidade fracionada é aceita (sobra de subscrição, desdobramento)', () => {
+  perto(avaliarAtivo({ ...posicaoBase, quantidade: '10,5' }, {}).valorAtual, 242.55);
+});
+teste('a posição não interfere no preço-teto nem no veredito', () => {
+  const comPosicao = avaliarAtivo(posicaoBase, { yieldPadrao: 6 });
+  const semPosicao = avaliarAtivo({ ...posicaoBase, quantidade: '', precoMedio: '' }, { yieldPadrao: 6 });
+  perto(comPosicao.precoTeto, semPosicao.precoTeto);
+  assert.equal(comPosicao.veredito, semPosicao.veredito);
+  assert.deepEqual(comPosicao.faltando, semPosicao.faltando);
+});
+teste('ativo em prejuízo não gera renda negativa', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: '10', lpaInformado: '-1', payout: '50', quantidade: '100', precoMedio: '9' }, {});
+  assert.equal(m.rendaAnual, null);
+  assert.equal(m.yieldOnCost, null);
+  perto(m.valorAtual, 1000);
+});
+
+console.log('totais da carteira');
+const carteiraDeTeste = [
+  { ticker: 'BBAS3', modo: 'dividendo', cotacao: '23,10', dpaInformado: '2,18', quantidade: '300', precoMedio: '20,00' },
+  { ticker: 'XPLG11', modo: 'dividendo', cotacao: '95,50', dpaInformado: '8,77', quantidade: '50' },
+  { ticker: 'VALE3', modo: 'lpa', cotacao: '60,00', lpaInformado: '8,00', payout: '40', quantidade: '100', precoMedio: '55,00' },
+  { ticker: 'SEMPOSICAO3', modo: 'lpa', cotacao: '10,00', lpaInformado: '1', payout: '50' },
+];
+teste('soma valor de hoje de todas as posições', () => {
+  const { resumo } = avaliarCarteira(carteiraDeTeste, { yieldPadrao: 6 });
+  assert.equal(resumo.carteira.ativos, 3);
+  perto(resumo.carteira.valorAtual, 6930 + 4775 + 6000);
+});
+teste('resultado e yield on cost usam só quem tem custo E cotação', () => {
+  const { resumo } = avaliarCarteira(carteiraDeTeste, {});
+  const c = resumo.carteira;
+  perto(c.valorInvestido, 6000 + 5500);
+  perto(c.resultado, (6930 + 6000) - (6000 + 5500));
+  // XPLG11 não entra: sem preço médio, somar o valor dele inflaria o lucro.
+  perto(c.resultadoPct, 1430 / 11500, 0.0001);
+  perto(c.yieldOnCost, (654 + 320) / 11500, 0.0001);
+  assert.equal(c.comparaveis, 2);
+  assert.equal(c.semPrecoMedio, 1);
+});
+teste('renda mensal da carteira inclui quem não informou preço médio', () => {
+  const { resumo } = avaliarCarteira(carteiraDeTeste, {});
+  perto(resumo.carteira.rendaAnual, 654 + 438.5 + 320);
+  perto(resumo.carteira.rendaMensal, (654 + 438.5 + 320) / 12);
+});
+teste('carteira sem nenhuma posição devolve null, não zero', () => {
+  const { resumo } = avaliarCarteira([{ ticker: 'A', modo: 'lpa', cotacao: '10' }], {});
+  assert.equal(resumo.carteira.ativos, 0);
+  assert.equal(resumo.carteira.valorAtual, null);
+  assert.equal(resumo.carteira.rendaMensal, null);
+  assert.equal(resumo.carteira.yieldOnCost, null);
+});
+teste('carteira vazia não quebra os totais', () => {
+  const { resumo } = avaliarCarteira([], {});
+  assert.equal(resumo.carteira.valorAtual, null);
+  assert.equal(resumo.carteira.semCotacao, 0);
+});
+teste('conta quem está sem cotação e sem provento, para a tela explicar', () => {
+  const { resumo } = avaliarCarteira([
+    { ticker: 'A', modo: 'lpa', quantidade: '10', precoMedio: '5' },
+    { ticker: 'B', modo: 'dividendo', cotacao: '10', quantidade: '10', precoMedio: '5' },
+  ], {});
+  assert.equal(resumo.carteira.semCotacao, 1);
+  assert.equal(resumo.carteira.semProvento, 2);
+});
+
 console.log('avaliarCarteira');
 teste('resumo conta SIM, NÃO e incompletos', () => {
   const { resumo } = avaliarCarteira(

@@ -16,6 +16,7 @@
   </div>
   <div class="acoes">
     <button id="btn-rastrear" class="primario">🔎 Rastrear a bolsa</button>
+    <button id="btn-carteira">💼 Minha carteira</button>
     <button id="btn-adicionar">+ Ativo</button>
     <button id="btn-cotacoes">↻ Atualizar cotações</button>
     <button id="btn-diagnostico">🔌 Testar conexão</button>
@@ -107,7 +108,72 @@
 <p id="status" class="status"></p>
 <section id="diagnostico" class="diagnostico" hidden></section>
 
-<h2 class="titulo-secao">Sua carteira acompanhada</h2>
+<section id="minha-carteira" class="minha-carteira">
+  <header class="rastreador-topo">
+    <div>
+      <h2>Minha carteira</h2>
+      <p class="sub">Quanto você tem hoje, quanto isso paga por mês e como fica se comprar mais. Preencha <strong>quantas ações</strong> e o <strong>preço médio</strong> de cada ativo — o resto o app calcula.</p>
+    </div>
+    <div class="acoes">
+      <button id="btn-simular">🧮 Simular compra</button>
+      <button id="btn-carteira-csv">⬇ CSV</button>
+      <button id="btn-carteira-fechar">Fechar</button>
+    </div>
+  </header>
+
+  <div id="totais" class="resumo"></div>
+  <p id="totais-nota" class="contagem"></p>
+
+  <div class="tabela-wrap">
+    <table id="tabela-posicoes">
+      <thead><tr></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="simulacao-resumo" class="simulacao" hidden></div>
+
+  <div class="graficos">
+    <figure class="grafico">
+      <figcaption>Onde está o seu dinheiro</figcaption>
+      <div id="g-composicao" class="tela-grafico"></div>
+      <p class="legenda">Fatia de cada ativo no valor de hoje. Concentração alta em um papel só é o risco que menos aparece nas outras telas.</p>
+    </figure>
+    <figure class="grafico">
+      <figcaption>Quanto cada ativo paga por mês</figcaption>
+      <div id="g-renda" class="tela-grafico"></div>
+      <p class="legenda">Renda média mensal = (quantidade × provento anual) ÷ 12. É média: ação paga em datas irregulares, FII costuma pagar todo mês.</p>
+    </figure>
+    <figure class="grafico largo">
+      <figcaption>Se você continuar aportando</figcaption>
+      <div class="filtros">
+        <label>Aporte por mês (R$)
+          <input id="p-aporte" inputmode="decimal" placeholder="ex.: 1.000">
+        </label>
+        <label>Por quantos anos
+          <select id="p-anos">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+          </select>
+        </label>
+        <label>Aumento do dividendo (% ao ano)
+          <input id="p-crescimento" inputmode="decimal" placeholder="vazio = 0">
+        </label>
+        <span class="check"><input type="checkbox" id="p-reinvestir" checked> reinvestir os proventos</span>
+      </div>
+      <div id="g-patrimonio" class="tela-grafico"></div>
+      <p class="legenda-grafico"><span class="chave aportado"></span> dinheiro que saiu do seu bolso <span class="chave reinvestido"></span> o que veio de provento reinvestido</p>
+      <div id="g-renda-futura" class="tela-grafico"></div>
+      <p id="projecao-resumo" class="legenda"></p>
+      <p class="legenda aviso">Projeção, não promessa: supõe que o yield da sua carteira continua o mesmo, que o preço das ações não muda e que nada é vendido. Serve para ver o efeito de aportar e reinvestir, não para prever o futuro.</p>
+    </figure>
+  </div>
+</section>
+
+<h2 class="titulo-secao">Premissas de cada ativo (preço-teto)</h2>
 <div class="tabela-wrap">
   <table id="tabela">
     <thead><tr></tr></thead>
@@ -132,6 +198,8 @@
 <script src="assets/calc.js"></script>
 <script src="assets/quotes.js"></script>
 <script src="assets/rastreador.js"></script>
+<script src="assets/projecao.js"></script>
+<script src="assets/graficos.js"></script>
 <script src="assets/seed.js"></script>
 <script src="assets/app.js"></script>
 </body>

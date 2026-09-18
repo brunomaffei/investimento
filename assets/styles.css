@@ -396,6 +396,81 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
 .adicionar { padding: 4px 9px; font-size: 12px; }
 .adicionar:disabled { cursor: default; }
 
+/* Minha carteira: posição, renda e gráficos. */
+.minha-carteira {
+  max-width: 1600px;
+  margin: 0 auto 20px;
+  padding: 14px 14px 16px;
+  background: var(--fundo-painel);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+}
+.minha-carteira h2 { margin: 0 0 4px; font-size: 16px; }
+.minha-carteira .resumo { margin: 0 0 6px; }
+.minha-carteira .card { background: var(--fundo); }
+.minha-carteira .card strong { display: block; font-size: 20px; }
+.minha-carteira .card strong.positivo { color: var(--verde); }
+.minha-carteira .card strong.negativo { color: var(--vermelho); }
+.minha-carteira .tabela-wrap { background: var(--fundo); }
+.minha-carteira .contagem { margin: 0 0 12px; }
+#tabela-posicoes .col-ticker { min-width: 120px; }
+#tabela-posicoes td.positivo { color: var(--verde); }
+#tabela-posicoes td.negativo { color: var(--vermelho); }
+/* A margem/veredito ficam fixas à direita na tabela de premissas; aqui não há
+   essas colunas, mas a regra global de sticky vale para qualquer tabela. */
+#tabela-posicoes th, #tabela-posicoes td { position: static; box-shadow: none; }
+
+.simulacao {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  background: var(--fundo);
+  border: 1px solid var(--ambar);
+  border-radius: 10px;
+}
+.simulacao h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ambar); }
+.comparacoes { display: flex; flex-wrap: wrap; gap: 10px 28px; }
+.comparacao { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.comparacao .rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-fraco); }
+.comparacao .antes { color: var(--texto-fraco); }
+.comparacao .seta { color: var(--texto-fraco); font-size: 11px; }
+.comparacao strong { font-size: 17px; }
+
+.graficos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.grafico {
+  margin: 0;
+  padding: 12px;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  min-width: 0;
+}
+.grafico.largo { grid-column: 1 / -1; }
+.grafico figcaption {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--texto-fraco);
+  margin-bottom: 10px;
+}
+.tela-grafico { min-height: 40px; }
+.tela-grafico svg { display: block; overflow: visible; }
+.tela-grafico svg text { font: 11px system-ui, sans-serif; fill: var(--texto-fraco); }
+.tela-grafico svg text.valor { fill: var(--texto); font-variant-numeric: tabular-nums; }
+.tela-grafico svg text.centro { font-size: 15px; font-weight: 600; fill: var(--texto); }
+.tela-grafico svg line.grade { stroke: var(--borda); stroke-width: 1; }
+.tela-grafico svg line.referencia { stroke: var(--texto-fraco); stroke-width: 1; }
+.grafico .legenda { margin: 8px 0 0; font-size: 12px; color: var(--texto-fraco); }
+.grafico .legenda.aviso { border-left: 3px solid var(--ambar); padding-left: 10px; }
+.legenda-grafico { margin: 6px 0 10px; font-size: 12px; color: var(--texto-fraco); display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.chave { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.chave.aportado { background: rgba(79,140,255,.6); border: 1px solid var(--acento); }
+.chave.reinvestido { background: var(--verde-fundo); border: 1px solid var(--verde); }
+
 /* Celular: cada linha vira um cartão com os rótulos à esquerda. */
 @media (max-width: 860px) {
   body { padding: 16px 12px 48px; }
@@ -424,4 +499,12 @@ tbody tr:hover .remover, .remover:focus-visible { opacity: 1; }
   .filtros label, .filtros input, .filtros select { flex: 1 1 100%; min-width: 0; }
   #tabela-rastreador td.col-acao { justify-content: flex-end; }
   #tabela-rastreador td.col-acao::before { content: ""; }
+}
+
+@media (max-width: 860px) {
+  .minha-carteira { padding: 12px 10px 14px; }
+  .graficos { grid-template-columns: 1fr; }
+  .comparacoes { gap: 10px 18px; }
+  /* Gráfico é imagem: não vira cartão como as tabelas. */
+  .tela-grafico svg { width: 100%; }
 }

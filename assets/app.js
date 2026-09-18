@@ -2,7 +2,8 @@
 (function () {
   'use strict';
 
-  const { parseNumero, avaliarCarteira, avaliarAtivo } = window.Calc;
+  const Calc = window.Calc;
+  const { parseNumero, avaliarCarteira, avaliarAtivo } = Calc;
   const {
     buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar, TICKER_B3,
   } = window.Quotes;
@@ -273,12 +274,16 @@
     el('#contagem').textContent = `${visiveis.length} de ${resumo.total} ativo(s)`;
     // O rastreador mostra quem já está na carteira: tirar uma linha aqui muda lá.
     if (universo) renderRastreador();
+    // Premissa alterada muda o DPA, e o DPA é a renda da posição.
+    renderMinhaCarteira();
     salvar();
   }
 
   /** Atualiza só as células calculadas de uma linha — mantém o foco de quem digita. */
   function atualizarLinha(id) {
-    const tr = document.querySelector(`tr[data-id="${id}"]`);
+    // Escopo obrigatório: a tabela de posições usa os MESMOS data-id, e um
+    // querySelector solto pegava a linha errada — a célula certa nunca era escrita.
+    const tr = document.querySelector(`#tabela tbody tr[data-id="${id}"]`);
     const ativo = estado.ativos.find((a) => a.id === id);
     if (!tr || !ativo) return;
     const m = avaliarAtivo(ativo, estado.config);
@@ -298,6 +303,7 @@
     if (celMargem) celMargem.className = `num forte col-margem ${classeMargem(m.margem, m.veredito)}`;
 
     atualizarResumo();
+    renderMinhaCarteira();
     salvar();
   }
 
@@ -728,6 +734,355 @@
     el('#rastreador').hidden = estado.config.rastreadorAberto === false;
   }
 
+  // ------------------------------------------------------------------ minha carteira
+
+  const { projetar, porAno } = window.Projecao;
+  const Graficos = window.Graficos;
+
+  // Yield não tem sinal: fmtPct põe "+" e o "+8,5%" num yield sugere variação.
+  const fmtTaxa = (fracao, casas = 2) => (fracao === null || !Number.isFinite(fracao)
+    ? vazio
+    : `${nf(casas, casas).format(fracao * 100)}%`);
+
+  const opcoesDaProjecao = () => ({ ...CONFIG_PADRAO.projecao, ...(estado.config.projecao || {}) });
+
+  function salvarProjecao(mudanca) {
+    estado.config.projecao = { ...opcoesDaProjecao(), ...mudanca };
+    salvar();
+  }
+
+  const COLUNAS_POSICAO = [
+    { rotulo: 'Ticker' },
+    { rotulo: 'Qtd. que tenho', num: true },
+    { rotulo: 'Preço médio', num: true },
+    { rotulo: 'Valor hoje', num: true },
+    { rotulo: 'Resultado', num: true },
+    { rotulo: 'Renda/mês', num: true },
+    { rotulo: 'Yield s/ custo', num: true },
+  ];
+  const COLUNA_SIMULACAO = { rotulo: 'Simular ±', num: true };
+
+  const simulando = () => !!estado.config.simulando;
+  const colunasDaPosicao = () => (simulando() ? [...COLUNAS_POSICAO, COLUNA_SIMULACAO] : COLUNAS_POSICAO);
+
+  /** Verde/vermelho aqui significam ganho/perda — nunca "abaixo/acima do teto". */
+  const classeResultado = (v) => (v === null || !Number.isFinite(v) ? 'neutro' : v >= 0 ? 'positivo' : 'negativo');
+
+  function celulaResultado(m) {
+    if (m.resultado === null) {
+      return m.posicaoIncompleta && m.precoMedio === null
+        ? `<span class="sub" title="Informe o preço médio para o app calcular ganho ou perda.">falta preço médio</span>`
+        : vazio;
+    }
+    return `${fmtMoeda(m.resultado)}<span class="sub">${fmtPct(m.resultadoPct)}</span>`;
+  }
+
+  /**
+   * Texto que o parseNumero não entende ("300 ações") não pode passar por campo
+   * vazio: a linha ficaria sem renda e sem ninguém explicar por quê.
+   */
+  function avisoDeNumero(ativo, campo) {
+    const cru = String(ativo[campo] ?? '').trim();
+    return cru && parseNumero(cru) === null
+      ? '<span class="tag alerta" title="Não entendi esse número. Escreva só o número, ex.: 300 ou 28,40.">?</span>'
+      : '';
+  }
+
+  function linhaPosicaoHtml({ ativo, metricas: m }) {
+    const alerta = (campo) => `<span data-aviso="${campo}">${avisoDeNumero(ativo, campo)}</span>`;
+    const simulacao = simulando()
+      ? `<td data-rotulo="Simular ±" class="num">${inputCelula(ativo, 'simulacaoQtd', 'placeholder="ex.: 300"')}</td>`
+      : '';
+    return `
+      <tr data-id="${ativo.id}">
+        <td class="col-ticker"><strong>${escapar(ativo.ticker || '—')}</strong><span class="sub">${escapar(ativo.setor || ativo.nome || '')}</span></td>
+        <td data-rotulo="Quantidade" class="num">${inputCelula(ativo, 'quantidade', 'placeholder="ex.: 300"')}${alerta('quantidade')}</td>
+        <td data-rotulo="Preço médio" class="num">${inputCelula(ativo, 'precoMedio', 'placeholder="ex.: 28,40"')}${alerta('precoMedio')}</td>
+        <td data-rotulo="Valor hoje" class="num forte" data-saida="valorAtual">${fmtMoeda(m.valorAtual)}</td>
+        <td data-rotulo="Resultado" class="num ${classeResultado(m.resultado)}" data-saida="resultado">${celulaResultado(m)}</td>
+        <td data-rotulo="Renda por mês" class="num forte" data-saida="rendaMensal">${fmtMoeda(m.rendaMensal)}</td>
+        <td data-rotulo="Yield sobre o custo" class="num" data-saida="yieldOnCost">${fmtTaxa(m.yieldOnCost)}</td>
+        ${simulacao}
+      </tr>`;
+  }
+
+  function cartoesDaCarteira(c) {
+    const resultado = c.resultado === null
+      ? vazio
+      : `<strong class="${classeResultado(c.resultado)}">${fmtMoeda(c.resultado)}</strong><span class="rotulo">${fmtPct(c.resultadoPct)}</span>`;
+    return `
+      <div class="card"><span class="rotulo">Investido (o que saiu do bolso)</span><strong>${fmtMoeda(c.valorInvestido)}</strong></div>
+      <div class="card"><span class="rotulo">Valor hoje</span><strong>${fmtMoeda(c.valorAtual)}</strong></div>
+      <div class="card"><span class="rotulo">Ganho ou perda</span>${resultado}</div>
+      <div class="card ok"><span class="rotulo">Renda média por mês</span><strong>${fmtMoeda(c.rendaMensal)}</strong><span class="rotulo">${c.rendaAnual === null ? '' : `${fmtMoeda(c.rendaAnual)} no ano`}</span></div>
+      <div class="card"><span class="rotulo">Yield sobre o custo</span><strong>${fmtTaxa(c.yieldOnCost)}</strong></div>`;
+  }
+
+  /** Diz de onde o número saiu e o que falta — sem isso o "—" vira mistério. */
+  function notaDosTotais(c) {
+    if (!c.ativos) {
+      return 'Nenhuma posição informada ainda. Preencha <strong>Qtd. que tenho</strong> (e o preço médio, se lembrar) para ver o quanto a carteira vale e quanto ela paga por mês.';
+    }
+    const partes = [`${c.ativos} ativo(s) com posição informada`];
+    if (c.semPrecoMedio) partes.push(`${c.semPrecoMedio} sem preço médio (fora do ganho/perda e do yield sobre o custo)`);
+    if (c.semCotacao) partes.push(`${c.semCotacao} sem cotação (clique em “Atualizar cotações”)`);
+    if (c.semProvento) partes.push(`${c.semProvento} sem provento definido (não entra na renda)`);
+    return escapar(partes.join(' · '));
+  }
+
+  let redesenhoAgendado = null;
+
+  function renderMinhaCarteira() {
+    const secao = el('#minha-carteira');
+    if (!secao || secao.hidden) return;
+    const { linhas, resumo } = avaliarCarteira(estado.ativos, estado.config);
+
+    el('#totais').innerHTML = cartoesDaCarteira(resumo.carteira);
+    el('#totais-nota').innerHTML = notaDosTotais(resumo.carteira);
+
+    el('#tabela-posicoes thead tr').innerHTML = colunasDaPosicao()
+      .map((c) => `<th class="${c.num ? 'num' : ''}">${c.rotulo}</th>`).join('');
+    el('#tabela-posicoes tbody').innerHTML = linhas.length
+      ? linhas.map(linhaPosicaoHtml).join('')
+      : `<tr class="vazia"><td colspan="${colunasDaPosicao().length}">Sua carteira está vazia. Use o rastreador ou “+ Ativo” para incluir papéis.</td></tr>`;
+
+    renderSimulacao(resumo.carteira);
+    agendarGraficos();
+  }
+
+  /** Atualiza só as células calculadas — quem está digitando não perde o foco. */
+  function atualizarLinhaPosicao(id) {
+    const tr = document.querySelector(`#tabela-posicoes tr[data-id="${id}"]`);
+    const ativo = estado.ativos.find((a) => a.id === id);
+    if (!tr || !ativo) return;
+    const m = avaliarAtivo(ativo, estado.config);
+    const escrever = (saida, html, classe) => {
+      const alvo = tr.querySelector(`[data-saida="${saida}"]`);
+      if (!alvo) return;
+      alvo.innerHTML = html;
+      if (classe) alvo.className = classe;
+    };
+    ['quantidade', 'precoMedio'].forEach((campo) => {
+      const aviso = tr.querySelector(`[data-aviso="${campo}"]`);
+      if (aviso) aviso.innerHTML = avisoDeNumero(ativo, campo);
+    });
+    escrever('valorAtual', fmtMoeda(m.valorAtual));
+    escrever('resultado', celulaResultado(m), `num ${classeResultado(m.resultado)}`);
+    escrever('rendaMensal', fmtMoeda(m.rendaMensal));
+    escrever('yieldOnCost', fmtTaxa(m.yieldOnCost));
+
+    const { resumo } = avaliarCarteira(estado.ativos, estado.config);
+    el('#totais').innerHTML = cartoesDaCarteira(resumo.carteira);
+    el('#totais-nota').innerHTML = notaDosTotais(resumo.carteira);
+    renderSimulacao(resumo.carteira);
+    agendarGraficos();
+  }
+
+  /** Antes → depois da compra simulada, que é a pergunta "vale a pena comprar?". */
+  function renderSimulacao(carteiraAtual) {
+    const painel = el('#simulacao-resumo');
+    if (!simulando()) {
+      painel.hidden = true;
+      return;
+    }
+    const { ativos: simulados, custo, caixa, compras } = Calc.simularCompras(estado.ativos);
+    if (!compras) {
+      painel.hidden = false;
+      painel.innerHTML = '<p class="sub">Digite na coluna <strong>Simular ±</strong> quantas ações você pensa em comprar (ou use número negativo para vender). A compra é somada ao que você já tem, pelo preço de hoje.</p>';
+      return;
+    }
+    const depois = avaliarCarteira(simulados, estado.config).resumo.carteira;
+    const diferencaRenda = depois.rendaMensal !== null && carteiraAtual.rendaMensal !== null
+      ? depois.rendaMensal - carteiraAtual.rendaMensal
+      : depois.rendaMensal;
+
+    const linha = (rotulo, antes, agora, formatar) => `
+      <div class="comparacao">
+        <span class="rotulo">${rotulo}</span>
+        <span class="antes">${formatar(antes)}</span>
+        <span class="seta">→</span>
+        <strong>${formatar(agora)}</strong>
+      </div>`;
+
+    painel.hidden = false;
+    painel.innerHTML = `
+      <h3>Se você fizer essa compra</h3>
+      <div class="comparacoes">
+        ${custo !== null ? `<div class="comparacao"><span class="rotulo">Custo da compra</span><strong>${fmtMoeda(custo)}</strong></div>` : ''}
+        ${caixa !== null ? `<div class="comparacao"><span class="rotulo">Entra da venda</span><strong>${fmtMoeda(caixa)}</strong></div>` : ''}
+        ${linha('Renda por mês', carteiraAtual.rendaMensal, depois.rendaMensal, fmtMoeda)}
+        ${linha('Valor da carteira', carteiraAtual.valorAtual, depois.valorAtual, fmtMoeda)}
+        ${linha('Yield sobre o custo', carteiraAtual.yieldOnCost, depois.yieldOnCost, (v) => fmtTaxa(v))}
+      </div>
+      <p class="sub">${diferencaRenda === null ? '' : `Sua renda mensal muda em <strong>${fmtMoeda(diferencaRenda)}</strong>.`} Simulação a preço de hoje, sem corretagem e sem imposto; nada é gravado na sua posição real.</p>`;
+  }
+
+  /** Redesenha no máximo a cada 150 ms: digitar não pode redesenhar 10 vezes. */
+  function agendarGraficos() {
+    clearTimeout(redesenhoAgendado);
+    redesenhoAgendado = setTimeout(desenharGraficos, 150);
+  }
+
+  const larguraDe = (seletor) => {
+    const alvo = el(seletor);
+    const medida = alvo ? alvo.clientWidth : 0;
+    // 1 unidade do viewBox = 1 pixel: assim o texto não encolhe no celular.
+    return Math.max(300, Math.min(960, medida || 640));
+  };
+
+  function desenharGraficos() {
+    const secao = el('#minha-carteira');
+    if (!secao || secao.hidden) return;
+
+    const base = simulando() ? Calc.simularCompras(estado.ativos).ativos : estado.ativos;
+    const { linhas, resumo } = avaliarCarteira(base, estado.config);
+    const atuais = avaliarCarteira(estado.ativos, estado.config).linhas;
+    const carteira = resumo.carteira;
+
+    const composicao = linhas
+      .filter((l) => l.metricas.valorAtual !== null)
+      .map((l) => ({ rotulo: l.ativo.ticker || '—', valor: l.metricas.valorAtual }));
+    el('#g-composicao').innerHTML = Graficos.rosca(composicao, { largura: larguraDe('#g-composicao'), titulo: 'Composição da carteira por ativo' })
+      || '<p class="sub">Preencha a quantidade (e atualize as cotações) para ver onde está o seu dinheiro.</p>';
+
+    // A barra mostra a renda de hoje; o pedaço destacado é o que a simulação acrescenta.
+    const rendaPorAtivo = linhas.map((l, i) => {
+      const atual = atuais[i] ? atuais[i].metricas.rendaMensal : null;
+      const simulada = l.metricas.rendaMensal;
+      const valor = atual === null ? 0 : atual;
+      const extra = simulando() && simulada !== null ? Math.max(0, simulada - valor) : 0;
+      return { rotulo: l.ativo.ticker || '—', valor, extra };
+    });
+    el('#g-renda').innerHTML = Graficos.barras(rendaPorAtivo, { largura: larguraDe('#g-renda'), titulo: 'Renda mensal por ativo' })
+      || '<p class="sub">Sem provento informado ainda: preencha o DPA (ou atualize as cotações com os fundamentos ligados).</p>';
+
+    desenharProjecao(carteira);
+  }
+
+  function desenharProjecao(carteira) {
+    const opcoes = opcoesDaProjecao();
+    const anos = Number(opcoes.anos) || 10;
+    const { serie, resumo } = projetar({
+      patrimonio: carteira.valorAtual,
+      rendaAnual: carteira.rendaAnual,
+      aporteMensal: parseNumero(opcoes.aporteMensal) || 0,
+      crescimentoAnual: parseNumero(opcoes.crescimentoAnual) || 0,
+      reinvestir: opcoes.reinvestir !== false,
+      meses: anos * 12,
+    });
+    const anual = porAno(serie);
+    if (anual.length < 2) {
+      el('#g-patrimonio').innerHTML = '<p class="sub">A projeção precisa de uma carteira com valor e provento: preencha as posições acima.</p>';
+      el('#g-renda-futura').innerHTML = '';
+      el('#projecao-resumo').textContent = '';
+      return;
+    }
+
+    el('#g-patrimonio').innerHTML = Graficos.areaEmpilhada(
+      anual.map((p) => ({ x: p.ano, base: p.aportado, topo: Math.max(0, p.patrimonio - p.aportado) })),
+      { largura: larguraDe('#g-patrimonio'), titulo: 'Patrimônio projetado', rotuloX: (v) => `${v} ano${v > 1 ? 's' : ''}` },
+    );
+    el('#g-renda-futura').innerHTML = Graficos.linha(
+      anual.map((p) => ({ x: p.ano, y: p.rendaMensal })),
+      {
+        largura: larguraDe('#g-renda-futura'),
+        titulo: 'Renda mensal projetada',
+        rotuloX: (v) => `${v} ano${v > 1 ? 's' : ''}`,
+        referencia: carteira.rendaMensal,
+      },
+    );
+    el('#projecao-resumo').innerHTML = `Em ${anos} anos: patrimônio de <strong>${fmtMoeda(resumo.patrimonioFinal)}</strong>, `
+      + `renda de <strong>${fmtMoeda(resumo.rendaMensalFinal)}</strong> por mês. `
+      + `Do seu bolso saíram ${fmtMoeda(resumo.aportado)}; os proventos somaram ${fmtMoeda(resumo.recebido)}.`;
+  }
+
+  function abrirMinhaCarteira(abrir) {
+    estado.config.carteiraAberta = abrir;
+    el('#minha-carteira').hidden = !abrir;
+    salvar();
+    if (abrir) renderMinhaCarteira();
+  }
+
+  function exportarCarteiraCsv() {
+    const { linhas, resumo } = avaliarCarteira(estado.ativos, estado.config);
+    const dec = (n) => (n === null || n === undefined || !Number.isFinite(n) ? '' : String(n).replace('.', ','));
+    const cabecalho = ['Ticker', 'Quantidade', 'Preco medio', 'Cotacao', 'Valor investido', 'Valor hoje',
+      'Resultado', 'Resultado (%)', 'Provento anual por acao', 'Renda anual', 'Renda mensal', 'Yield sobre custo (%)'];
+    const corpo = linhas
+      .filter(({ metricas: m }) => m.posicao !== null)
+      .map(({ ativo, metricas: m }) => [
+        ativo.ticker || '', dec(m.posicao), dec(m.precoMedio), dec(m.cotacao),
+        dec(m.valorInvestido), dec(m.valorAtual), dec(m.resultado),
+        // Fração vira ponto percentual só aqui, na saída — a planilha espera 15,5.
+        dec(m.resultadoPct === null ? null : m.resultadoPct * 100),
+        dec(m.dpa), dec(m.rendaAnual), dec(m.rendaMensal),
+        dec(m.yieldOnCost === null ? null : m.yieldOnCost * 100),
+      ]);
+    if (!corpo.length) {
+      status('Nenhuma posição preenchida para exportar: informe a quantidade de pelo menos um ativo.', 'alerta');
+      return;
+    }
+    const total = resumo.carteira;
+    corpo.push(['TOTAL', '', '', '', dec(total.valorInvestido), dec(total.valorAtual), dec(total.resultado),
+      dec(total.resultadoPct === null ? null : total.resultadoPct * 100), '', dec(total.rendaAnual), dec(total.rendaMensal),
+      dec(total.yieldOnCost === null ? null : total.yieldOnCost * 100)]);
+    const csv = [cabecalho, ...corpo].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    baixar(`minha-carteira-${hoje()}.csv`, `﻿${csv}`, 'text/csv;charset=utf-8');
+    status(`${corpo.length - 1} posição(ões) exportadas.`, 'ok');
+  }
+
+  function ligarEventosDaCarteira() {
+    el('#btn-carteira').addEventListener('click', () => abrirMinhaCarteira(el('#minha-carteira').hidden));
+    el('#btn-carteira-fechar').addEventListener('click', () => abrirMinhaCarteira(false));
+    el('#btn-carteira-csv').addEventListener('click', exportarCarteiraCsv);
+    el('#btn-simular').addEventListener('click', () => {
+      estado.config.simulando = !simulando();
+      salvar();
+      renderMinhaCarteira();
+      sincronizarMinhaCarteira();
+    });
+
+    const corpo = el('#tabela-posicoes tbody');
+    corpo.addEventListener('input', (evento) => {
+      const alvo = evento.target.closest('.cel-input');
+      if (!alvo) return;
+      const ativo = estado.ativos.find((a) => a.id === alvo.dataset.id);
+      if (!ativo) return;
+      ativo[alvo.dataset.campo] = alvo.value;
+      atualizarLinhaPosicao(ativo.id);
+      salvar();
+    });
+
+    const campos = [
+      ['#p-aporte', 'input', (e) => ({ aporteMensal: e.target.value })],
+      ['#p-anos', 'change', (e) => ({ anos: Number(e.target.value) })],
+      ['#p-crescimento', 'input', (e) => ({ crescimentoAnual: e.target.value })],
+      ['#p-reinvestir', 'change', (e) => ({ reinvestir: e.target.checked })],
+    ];
+    campos.forEach(([sel, evt, ler]) => el(sel).addEventListener(evt, (evento) => {
+      salvarProjecao(ler(evento));
+      agendarGraficos();
+    }));
+
+    // Gráfico desenhado em pixels: mudou a largura da tela, redesenha.
+    let redesenhoDeTela = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(redesenhoDeTela);
+      redesenhoDeTela = setTimeout(desenharGraficos, 200);
+    });
+  }
+
+  function sincronizarMinhaCarteira() {
+    const opcoes = opcoesDaProjecao();
+    el('#p-aporte').value = opcoes.aporteMensal ?? '';
+    el('#p-anos').value = String(opcoes.anos || 10);
+    el('#p-crescimento').value = opcoes.crescimentoAnual ?? '';
+    el('#p-reinvestir').checked = opcoes.reinvestir !== false;
+    el('#minha-carteira').hidden = estado.config.carteiraAberta === false;
+    el('#btn-simular').textContent = simulando() ? '🧮 Parar simulação' : '🧮 Simular compra';
+    el('#btn-simular').classList.toggle('primario', simulando());
+  }
+
   // ------------------------------------------------------------------ import/export
 
   function baixar(nome, conteudo, tipo) {
@@ -775,6 +1130,8 @@
           ativos: dados.ativos.map((a) => ({ ...a, id: a.id || novoId() })),
         };
         sincronizarConfig();
+        sincronizarRastreador();
+        sincronizarMinhaCarteira();
         render();
         status(`Carteira importada: ${estado.ativos.length} ativo(s).`, 'ok');
       } catch (erro) {
@@ -903,7 +1260,10 @@
       if (!confirm('Apagar todos os ativos e voltar à lista inicial? Exporte antes se quiser guardar.')) return;
       localStorage.removeItem(CHAVE_STORAGE);
       estado = carregar();
+      localStorage.removeItem(`${CHAVE_STORAGE}.ilegivel`);
       sincronizarConfig();
+      sincronizarRastreador();
+      sincronizarMinhaCarteira();
       render();
       status('Carteira restaurada para a lista inicial.', '');
     });
@@ -964,8 +1324,10 @@
 
   sincronizarConfig();
   sincronizarRastreador();
+  sincronizarMinhaCarteira();
   ligarEventos();
   ligarEventosDoRastreador();
+  ligarEventosDaCarteira();
   render();
   atualizarAoAbrir();
   if (estado.config.rastreadorAberto !== false) carregarUniverso(false);
