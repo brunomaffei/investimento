@@ -159,8 +159,8 @@
             <option value="30">30</option>
           </select>
         </label>
-        <label>Aumento do dividendo (% ao ano)
-          <input id="p-crescimento" inputmode="decimal" placeholder="vazio = 0">
+        <label>Crescimento ao ano (%)
+          <input id="p-crescimento" inputmode="decimal" placeholder="vazio = 0" title="Dividendo e preço crescendo juntos — é o que mantém o yield constante.">
         </label>
         <span class="check"><input type="checkbox" id="p-reinvestir" checked> reinvestir os proventos</span>
       </div>
@@ -168,7 +168,7 @@
       <p class="legenda-grafico"><span class="chave aportado"></span> dinheiro que saiu do seu bolso <span class="chave reinvestido"></span> o que veio de provento reinvestido</p>
       <div id="g-renda-futura" class="tela-grafico"></div>
       <p id="projecao-resumo" class="legenda"></p>
-      <p class="legenda aviso">Projeção, não promessa: supõe que o yield da sua carteira continua o mesmo, que o preço das ações não muda e que nada é vendido. Serve para ver o efeito de aportar e reinvestir, não para prever o futuro.</p>
+      <p class="legenda aviso">Projeção, não promessa: supõe que o <strong>yield</strong> da sua carteira continua o mesmo e que nada é vendido. O campo <em>crescimento ao ano</em> faz dividendo e preço subirem juntos — deixando em 0, o preço fica parado e o patrimônio cresce só com aporte e reinvestimento. Sem imposto e sem corretagem.</p>
     </figure>
   </div>
 </section>

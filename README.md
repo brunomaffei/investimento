@@ -224,9 +224,12 @@ Quatro, todos em SVG escrito à mão — sem biblioteca, sem CDN, sem build:
 4. **Renda mensal projetada** — a linha que responde "quanto eu receberia por mês",
    com uma marca na renda de hoje.
 
-Os dois últimos usam aporte mensal, prazo, crescimento do dividendo e reinvestimento,
-todos configuráveis ali mesmo. **É projeção, não promessa**: supõe yield constante,
-preço parado, nada vendido, sem imposto e sem corretagem — e a tela diz isso.
+Os dois últimos usam aporte mensal, prazo, crescimento ao ano e reinvestimento, todos
+configuráveis ali mesmo. **É projeção, não promessa**: supõe o **yield** da carteira
+constante, nada vendido, sem imposto e sem corretagem — e a tela diz isso. O campo
+*crescimento ao ano* sobe dividendo **e** preço na mesma taxa (é justamente o que
+mantém o yield constante); em 0, o preço fica parado e o patrimônio cresce só com
+aporte e reinvestimento.
 
 ## Rotina mensal sugerida
 

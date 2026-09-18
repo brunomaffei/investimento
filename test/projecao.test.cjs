@@ -38,10 +38,19 @@ teste('o aporte entra no patrimônio e é contado como dinheiro do bolso', () =>
   perto(serie[9].aportado, 15000);
   perto(serie[9].patrimonio, 15000);
 });
-teste('a renda também pode crescer por ano (aumento de dividendo)', () => {
-  const semCrescimento = projetar({ patrimonio: 100000, rendaAnual: 6000, meses: 120, reinvestir: false });
-  const comCrescimento = projetar({ patrimonio: 100000, rendaAnual: 6000, meses: 120, reinvestir: false, crescimentoAnual: 5 });
-  assert.ok(comCrescimento.resumo.rendaMensalFinal > semCrescimento.resumo.rendaMensalFinal * 1.5);
+teste('crescimento faz dividendo e preço subirem juntos, mantendo o yield', () => {
+  const sem = projetar({ patrimonio: 100000, rendaAnual: 6000, meses: 120, reinvestir: false });
+  const com = projetar({ patrimonio: 100000, rendaAnual: 6000, meses: 120, reinvestir: false, crescimentoAnual: 5 });
+  assert.ok(com.resumo.rendaMensalFinal > sem.resumo.rendaMensalFinal * 1.5);
+  // 100.000 x 1,05^10 = 162.889 — o preço acompanha o dividendo.
+  perto(com.resumo.patrimonioFinal, 100000 * 1.05 ** 10, 200);
+  // E o yield continua o mesmo: renda do último mês sobre o patrimônio daquele mês.
+  const ultimo = com.serie[com.serie.length - 1];
+  perto((ultimo.rendaMensal * 12) / ultimo.patrimonio, 0.06, 0.0005);
+});
+teste('sem crescimento, o preço fica parado — o patrimônio só cresce com aporte e reinvestimento', () => {
+  const { resumo } = projetar({ patrimonio: 100000, rendaAnual: 6000, meses: 120, reinvestir: false, aporteMensal: 0 });
+  perto(resumo.patrimonioFinal, 100000, 0.01);
 });
 teste('sem patrimônio não há taxa para projetar: série vazia, não zero disfarçado', () => {
   const vazia = projetar({ patrimonio: 0, rendaAnual: 0, aporteMensal: 300 });

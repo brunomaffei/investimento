@@ -8,11 +8,15 @@
  *   3. se reinvestir, a renda volta para o patrimônio
  *
  * Premissas — que são premissas mesmo, e a tela precisa dizer isso:
- *   - o yield da carteira continua o mesmo (renda anual ÷ valor de hoje, contando
+ *   - o YIELD da carteira continua o mesmo (renda anual ÷ valor de hoje, contando
  *     só os ativos que têm os dois números);
- *   - o preço das ações não muda, então "patrimônio" cresce só por aporte e
- *     reinvestimento — nada aqui projeta valorização;
- *   - o dividendo pode crescer por ano (crescimentoAnual), padrão 0;
+ *   - `crescimentoAnual` faz dividendo E preço crescerem juntos, na mesma taxa.
+ *     É o que mantém o yield constante: fazer só o dividendo crescer com o preço
+ *     parado implicaria um yield subindo para sempre — em 30 anos a 5% ao ano, a
+ *     carteira passaria a render 4 vezes mais sobre o mesmo preço, o que contradiz
+ *     a própria premissa acima;
+ *   - com crescimento 0 (padrão), o preço fica parado e o patrimônio cresce só
+ *     por aporte e reinvestimento;
  *   - sem imposto: dividendo de ação e de FII é isento para pessoa física hoje,
  *     mas JCP tem 15% na fonte e a regra pode mudar.
  *
@@ -40,7 +44,7 @@
    * @param {number} [entrada.aporteMensal]  quanto a pessoa pretende aportar por mês
    * @param {number} [entrada.meses]         horizonte (padrão 120)
    * @param {boolean} [entrada.reinvestir]   padrão true
-   * @param {number} [entrada.crescimentoAnual] crescimento do dividendo em % ao ano
+   * @param {number} [entrada.crescimentoAnual] crescimento de dividendo e preço, % ao ano
    * @returns {{serie: PontoDaProjecao[], yieldAnual: number|null, resumo: Object}}
    */
   function projetar(entrada = {}) {
@@ -63,13 +67,14 @@
     let patrimonio = patrimonioInicial;
     let aportado = patrimonioInicial;
     let recebido = 0;
-    let taxaMensal = yieldAnual / 12;
+    // Constante: é a premissa declarada na tela. O crescimento entra no preço e no
+    // dividendo ao mesmo tempo, então a razão entre os dois não muda.
+    const taxaMensal = yieldAnual / 12;
 
     for (let mes = 1; mes <= meses; mes++) {
+      patrimonio *= 1 + crescimentoMensal;
       patrimonio += aporteMensal;
       aportado += aporteMensal;
-      // O dividendo cresce com o tempo; o yield sobre o preço de compra sobe junto.
-      taxaMensal *= 1 + crescimentoMensal;
       const rendaMensal = patrimonio * taxaMensal;
       recebido += rendaMensal;
       if (reinvestir) patrimonio += rendaMensal;
