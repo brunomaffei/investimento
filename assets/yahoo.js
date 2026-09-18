@@ -56,14 +56,25 @@
   }
 
   /**
+   * Prazo de toda consulta externa. Sem isso, uma fonte que aceita a conexão e não
+   * responde segurava a atualização por minutos (o padrão do Node desiste perto dos
+   * 5) — na tela, o botão ficava "Buscando…" até alguém recarregar a página.
+   */
+  const PRAZO_YAHOO = 10000;
+
+  const comPrazo = (ms) => (typeof AbortSignal === 'function' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : undefined);
+
+  /**
    * Busca preço e proventos de 12 meses de um ativo.
    * @param {string} ticker Código na B3, ex.: "BBAS3".
-   * @param {{fetchImpl?: Function, base?: string, intervalo?: string}} [opcoes]
+   * @param {{fetchImpl?: Function, base?: string, intervalo?: string, prazoMs?: number}} [opcoes]
    * @returns {Promise<ResumoYahoo>}
    * @throws {ErroYahoo}
    */
   async function buscarResumo(ticker, opcoes = {}) {
-    const { fetchImpl, base = BASE_YAHOO } = opcoes;
+    const { fetchImpl, base = BASE_YAHOO, prazoMs = PRAZO_YAHOO } = opcoes;
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new ErroYahoo('fetch indisponível neste ambiente.', { codigo: 'sem-fetch' });
 
@@ -74,7 +85,7 @@
     let resposta;
     try {
       // O endpoint recusa cliente sem User-Agent de navegador.
-      resposta = await http(url, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' } });
+      resposta = await http(url, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' }, signal: comPrazo(prazoMs) });
     } catch (erro) {
       throw new ErroYahoo(`Sem conexão com o Yahoo (${erro.message}).`, { codigo: 'rede' });
     }

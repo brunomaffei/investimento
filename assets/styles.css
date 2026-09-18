@@ -28,6 +28,7 @@ body {
 h1 { margin: 0 0 4px; font-size: 21px; letter-spacing: -0.01em; }
 .sub { margin: 0; color: var(--texto-fraco); font-size: 13px; max-width: 70ch; }
 .sub strong { color: var(--texto); font-weight: 600; }
+.sub.alerta { color: var(--ambar); cursor: help; }
 
 .topo {
   display: flex;

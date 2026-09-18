@@ -132,6 +132,27 @@ const perto = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `esperado ${b}, veio $
     assert.equal(http.chamadas.length, 0);
   });
 
+  await teste('fonte que aceita a conexão e não responde não pendura o app', async () => {
+    // Sem prazo, o padrão do Node só desistia perto de 5 minutos POR TICKER: na tela,
+    // o botão ficava "Buscando…" até alguém recarregar a página. O teste usa um
+    // servidor de verdade que aceita e nunca responde — com fetch falso, o timer do
+    // AbortSignal é unref e o próprio teste terminaria antes de provar qualquer coisa.
+    const { createServer } = require('node:http');
+    const mudo = createServer(() => { /* aceita e nunca responde */ });
+    await new Promise((pronto) => mudo.listen(0, '127.0.0.1', pronto));
+    const base = `http://127.0.0.1:${mudo.address().port}`;
+    const inicio = Date.now();
+    try {
+      await assert.rejects(
+        buscarResumo('BBAS3', { base, prazoMs: 300 }),
+        /Yahoo/,
+      );
+      assert.ok(Date.now() - inicio < 5000, `desistiu em ${Date.now() - inicio}ms — devia ser quase imediato`);
+    } finally {
+      mudo.close();
+    }
+  });
+
   console.log(falhas ? `\n${falhas} teste(s) do Yahoo falharam` : '\nTodos os testes do Yahoo passaram');
   process.exit(falhas ? 1 : 0);
 })();

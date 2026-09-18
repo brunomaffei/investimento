@@ -67,9 +67,48 @@ teste('valores zero, negativos e não numéricos são descartados', () => {
   assert.equal(r.eventos, 1);
 });
 
-teste('evento sem data legível entra na soma', () => {
-  perto(somar12m({ dividends: [{ value: 0.4 }] }).valor, 0.4);
-  perto(somar12m({ dividends: [{ ex_date: 'data inválida', value: 0.4 }] }).valor, 0.4);
+teste('quando NENHUM evento tem data, soma tudo e avisa', () => {
+  // Sem data em lugar nenhum não há como cortar: soma, mas marca semDatas para
+  // quem chama poder desconfiar do número.
+  const soma = somar12m({ dividends: [{ value: 0.4 }] });
+  perto(soma.valor, 0.4);
+  assert.equal(soma.semDatas, true);
+});
+
+teste('se a fonte tem datas, o evento sem data legível fica FORA', () => {
+  // Deixar entrar somava a MAIS: inflava o DPA, o preço-teto e virava SIM falso.
+  const hoje = new Date().toISOString();
+  const soma = somar12m({ dividends: [
+    { ex_date: hoje, value: 1 },
+    { ex_date: 'data inválida', value: 9 },
+    { value: 50 },
+  ] });
+  perto(soma.valor, 1);
+  assert.equal(soma.eventos, 1);
+  assert.equal(soma.ignorados, 2);
+});
+
+teste('data de pagamento em português também é reconhecida', () => {
+  // A bolsai usa data_pagamento; fora da lista de candidatos, um provento de 2015
+  // era tratado como "sem data" e entrava na soma.
+  const soma = somar12m({ dividends: [{ data_pagamento: '2015-01-01', value: 50 }, { ex_date: new Date().toISOString(), value: 2 }] });
+  perto(soma.valor, 2);
+  assert.equal(soma.ignorados, 1);
+});
+
+teste('provento com data muito à frente não entra nos 12 meses', () => {
+  const daquiAUmAno = new Date(Date.now() + 400 * 24 * 3600 * 1000).toISOString();
+  const soma = somar12m({ dividends: [
+    { ex_date: new Date().toISOString(), value: 1 },
+    { ex_date: daquiAUmAno, value: 5 },
+  ] });
+  perto(soma.valor, 1);
+  assert.equal(soma.ignorados, 1);
+});
+
+teste('provento já declarado para as próximas semanas continua contando', () => {
+  const emDuasSemanas = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+  perto(somar12m({ dividends: [{ payment_date: emDuasSemanas, value: 0.7 }] }).valor, 0.7);
 });
 
 teste('o corte de 12 meses respeita a referência informada', () => {

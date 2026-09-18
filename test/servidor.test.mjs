@@ -399,6 +399,45 @@ try {
     assert.ok(!logSemToken.join('').includes('NAO-LOGAR-ISSO'), `log não deve conter o token: ${logSemToken.join('')}`);
   });
 
+  await teste('erro de token não dispara busca de "códigos parecidos" para cada ativo', async () => {
+    // Com token recusado, todos os tickers falham pelo mesmo motivo. Perguntar
+    // "existe algo parecido com BBAS3?" para cada um gastava uma requisição por
+    // ativo e ainda culpava o código do papel por um problema de token.
+    pedidosRecebidos.length = 0;
+    const corpo = await (await fetch(urlSemToken('/api/cotacoes?tickers=BBAS3,ITSA4,TAEE11'))).json();
+    assert.equal(Object.keys(corpo.erros).length, 3, 'os três devem falhar por token');
+    const buscasPorParecidos = pedidosRecebidos.filter((p) => p.url.includes('list?'));
+    assert.equal(buscasPorParecidos.length, 0, `não deveria procurar parecidos: ${buscasPorParecidos.length} consultas`);
+    assert.ok(!Object.values(corpo.erros).some((e) => /A brapi tem:/.test(e)), 'nem sugerir código parecido');
+  });
+
+  await teste('URL com % solto responde 400 e o servidor continua de pé', async () => {
+    const resposta = await fetch(url('/%ZZ'));
+    assert.equal(resposta.status, 400);
+    // O que importa é o "continua de pé": antes o processo morria e o app saía do ar.
+    const saude = await fetch(url('/api/health'));
+    assert.equal(saude.status, 200);
+  });
+
+  await teste('a raiz do projeto é resolvida sem percent-encoding', async () => {
+    // Em pasta com espaço ou acento, o caminho vindo da URL vinha codificado e o
+    // servidor respondia 404 em tudo. Se a raiz está certa, o index é servido.
+    const resposta = await fetch(url('/'));
+    assert.equal(resposta.status, 200);
+    assert.match(await resposta.text(), /<table id="tabela"/);
+  });
+
+  await teste('por padrão só escuta em 127.0.0.1', async () => {
+    const { networkInterfaces } = await import('node:os');
+    const externo = Object.values(networkInterfaces()).flat()
+      .find((i) => i && i.family === 'IPv4' && !i.internal);
+    if (!externo) return; // máquina sem interface de rede: nada a provar
+    await assert.rejects(
+      fetch(`http://${externo.address}:${porta}/api/health`),
+      'o vizinho de rede não pode alcançar o servidor (nem o token nele)',
+    );
+  });
+
   await teste('token do servidor tem precedência sobre o do app', async () => {
     pedidosRecebidos.length = 0;
     await fetch(url('/api/cotacoes?tickers=CPLE6&token=TOKEN-DO-APP'));

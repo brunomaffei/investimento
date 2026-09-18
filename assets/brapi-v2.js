@@ -47,6 +47,17 @@
   // Rota de FII é irmã da de ações: .../v2/stocks -> .../v2/fii
   const paraFii = (base) => String(base || BASE_V2).replace(/\/stocks$/, '/fii');
 
+  /**
+   * Prazo de toda consulta externa. Sem isso, uma fonte que aceita a conexão e não
+   * responde segurava a atualização por minutos (o padrão do Node desiste perto dos
+   * 5) — na tela, o botão ficava "Buscando…" até alguém recarregar a página.
+   */
+  const PRAZO_BRAPI = 12000;
+
+  const comPrazo = (ms) => (typeof AbortSignal === 'function' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : undefined);
+
   /** Erro de chamada à brapi, com o status HTTP preservado para quem decide o que fazer. */
   class ErroBrapi extends Error {
     /**
@@ -92,7 +103,7 @@
 
     let resposta;
     try {
-      resposta = await http(`${base}${caminho}`, { headers: cabecalhos });
+      resposta = await http(`${base}${caminho}`, { headers: cabecalhos, signal: comPrazo(PRAZO_BRAPI) });
     } catch (erro) {
       throw new ErroBrapi(`Sem conexão com a brapi (${erro.message}).`, { codigo: 'rede' });
     }
@@ -168,7 +179,7 @@
 
     let resposta;
     try {
-      resposta = await http(url, { headers: cabecalhos });
+      resposta = await http(url, { headers: cabecalhos, signal: comPrazo(PRAZO_BRAPI) });
     } catch (erro) {
       throw new ErroBrapi(`Sem conexão com a brapi (${erro.message}).`, { codigo: 'rede' });
     }

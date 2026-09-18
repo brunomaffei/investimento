@@ -18,7 +18,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const CANDIDATOS_DATA = ['ex_date', 'exDate', 'data_com', 'dataCom', 'lastDatePrior', 'payment_date', 'paymentDate', 'paymentDateTime', 'date', 'data'];
+  const CANDIDATOS_DATA = [
+    'ex_date', 'exDate', 'data_com', 'dataCom', 'lastDatePrior',
+    'payment_date', 'paymentDate', 'paymentDateTime', 'data_pagamento', 'dataPagamento',
+    'date', 'data', 'dataEx', 'data_ex',
+  ];
   const CANDIDATOS_VALOR = ['rate', 'value', 'valor', 'amount', 'dividend', 'provento', 'cash_amount'];
   const COLECOES = ['dividends', 'dividendos', 'cashDividends', 'cash_dividends', 'results', 'data', 'events', 'eventos'];
 
@@ -90,31 +94,50 @@
    * @param {number} [agora] Momento de referência (facilita testar).
    * @returns {SomaDeProventos}
    */
-  function somar12m(corpo, agora = Date.now()) {
-    const eventos = listaDeEventos(corpo);
-    if (!eventos.length) return { valor: null, eventos: 0, chaveValor: null };
+  const DIA = 24 * 60 * 60 * 1000;
+  // Provento já declarado costuma aparecer com data de pagamento algumas semanas à
+  // frente; além disso é pagamento de outro exercício e não pertence aos 12 meses.
+  const FOLGA_FUTURA = 45 * DIA;
 
-    const limite = agora - 365 * 24 * 60 * 60 * 1000;
+  function somar12m(corpo, agora = Date.now()) {
+    const eventos = listaDeEventos(corpo)
+      .filter((e) => e && typeof e === 'object');
+    if (!eventos.length) return { valor: null, eventos: 0, chaveValor: null, ignorados: 0, semDatas: false };
+
+    const dataDe = (evento) => {
+      const chaveData = CANDIDATOS_DATA.find((c) => evento[c]);
+      return chaveData ? paraMilissegundos(evento[chaveData]) : NaN;
+    };
+    // Se a fonte traz datas, evento sem data é anomalia e fica FORA: somar a mais
+    // infla o DPA, o preço-teto e vira "SIM" falso. Só quando NENHUM evento tem data
+    // é que a soma vai sem corte — aí não há como escolher, e quem chama é avisado.
+    const semDatas = !eventos.some((e) => Number.isFinite(dataDe(e)));
+
+    const inicio = agora - 365 * DIA;
+    const fim = agora + FOLGA_FUTURA;
     let soma = 0;
     let usados = 0;
+    let ignorados = 0;
     let chaveValor = null;
 
     for (const evento of eventos) {
-      if (!evento || typeof evento !== 'object') continue;
       const chave = CANDIDATOS_VALOR.find((c) => numero(evento[c]) !== null);
       const valor = chave ? numero(evento[chave]) : null;
       if (valor === null || valor <= 0) continue;
 
-      const chaveData = CANDIDATOS_DATA.find((c) => evento[c]);
-      const data = chaveData ? paraMilissegundos(evento[chaveData]) : NaN;
-      // Evento sem data legível entra: é melhor somar a menos do que inventar.
-      if (Number.isFinite(data) && data < limite) continue;
+      if (!semDatas) {
+        const data = dataDe(evento);
+        if (!Number.isFinite(data) || data < inicio || data > fim) {
+          ignorados++;
+          continue;
+        }
+      }
 
       soma += valor;
       usados++;
       chaveValor = chaveValor || chave;
     }
-    return { valor: usados ? soma : null, eventos: usados, chaveValor };
+    return { valor: usados ? soma : null, eventos: usados, chaveValor, ignorados, semDatas };
   }
 
   return { somar12m, listaDeEventos, paraMilissegundos, CANDIDATOS_DATA, CANDIDATOS_VALOR, COLECOES };

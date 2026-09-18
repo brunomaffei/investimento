@@ -72,6 +72,21 @@
   const ASSINATURA_SERVIDOR = 'preco-teto';
 
   /**
+   * Prazo de toda consulta externa. Sem isso, uma fonte que aceita a conexão e não
+   * responde segurava a atualização por minutos (o padrão do Node desiste perto dos
+   * 5) — na tela, o botão ficava "Buscando…" até alguém recarregar a página.
+   */
+  const PRAZO_REDE = 12000;
+  // O servidor local agrega várias fontes por ticker: o prazo dele é mais folgado,
+  // mas existe, para o botão sempre destravar.
+  const PRAZO_SERVIDOR = 90000;
+  const PRAZO_SAUDE = 4000;
+
+  const comPrazo = (ms) => (typeof AbortSignal === 'function' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : undefined);
+
+  /**
    * Procura tickers parecidos em /api/quote/list?search=…, para quando um código
    * não existe mais (CPLE6 virou CPLE3 na migração da Copel ao Novo Mercado, por
    * exemplo) e o usuário precisa saber qual usar no lugar.
@@ -89,7 +104,7 @@
     const params = new URLSearchParams({ search: busca });
     if (token) params.set('token', token);
     try {
-      const resposta = await http(`${base}list?${params}`, { headers: { Accept: 'application/json' } });
+      const resposta = await http(`${base}list?${params}`, { headers: { Accept: 'application/json' }, signal: comPrazo(PRAZO_REDE) });
       if (!resposta.ok) return [];
       const corpo = await resposta.json();
       // A lista vem em `stocks`; cada item traz o código em `stock`.
@@ -117,7 +132,7 @@
     // Em file:// não há servidor para consultar.
     if (typeof location !== 'undefined' && !/^https?:$/.test(location.protocol)) return ausente;
     try {
-      const resposta = await http(`${base}/api/health`, { headers: { Accept: 'application/json' } });
+      const resposta = await http(`${base}/api/health`, { headers: { Accept: 'application/json' }, signal: comPrazo(PRAZO_SAUDE) });
       if (!resposta.ok) return ausente;
       const corpo = await resposta.json();
       if (!corpo || corpo.servico !== ASSINATURA_SERVIDOR) return ausente;
@@ -149,7 +164,7 @@
     const params = new URLSearchParams({ tickers: limpos.join(',') });
     if (fundamentos) params.set('fundamentos', '1');
     if (token) params.set('token', token);
-    const resposta = await http(`${base}/api/cotacoes?${params}`, { headers: { Accept: 'application/json' } });
+    const resposta = await http(`${base}/api/cotacoes?${params}`, { headers: { Accept: 'application/json' }, signal: comPrazo(PRAZO_SERVIDOR) });
     if (!resposta.ok) {
       const motivo = `O servidor local respondeu HTTP ${resposta.status}.`;
       return { dados: {}, erros: Object.fromEntries(limpos.map((t) => [t, motivo])), avisos: [] };
@@ -176,7 +191,7 @@
     const executar = async (rotulo, chave, url, cabecalhos, forma = 'brapi') => {
       const inicio = Date.now();
       try {
-        const resposta = await http(url, { headers: { Accept: 'application/json', ...(cabecalhos || {}) } });
+        const resposta = await http(url, { headers: { Accept: 'application/json', ...(cabecalhos || {}) }, signal: comPrazo(PRAZO_REDE) });
         const etapa = { rotulo, chave, ok: resposta.ok, status: resposta.status, ms: Date.now() - inicio };
         if (resposta.ok) {
           const corpo = await resposta.json().catch(() => null);
@@ -398,7 +413,7 @@
    * @returns {Promise<{dados: Object, erros: Object, avisos: string[]}>}
    */
   async function buscarCotacoes(tickers, opcoes) {
-    const { token, fetchImpl, fundamentos = false, base } = opcoes || {};
+    const { token, fetchImpl, fundamentos = false, base, prazoMs = PRAZO_REDE } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
 
@@ -411,7 +426,7 @@
       const cabecalhos = { Accept: 'application/json' };
       if (viaHeader && token) cabecalhos.Authorization = `Bearer ${token}`;
       const url = montarUrl(lote, viaHeader ? null : token, comFundamentos, base);
-      const resposta = await http(url, { headers: cabecalhos });
+      const resposta = await http(url, { headers: cabecalhos, signal: comPrazo(prazoMs) });
       if (!resposta.ok) return { status: resposta.status };
       const corpo = await resposta.json();
       return { resultados: Array.isArray(corpo.results) ? corpo.results : [] };

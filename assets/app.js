@@ -17,22 +17,45 @@
 
   // ---------------------------------------------------------------- persistência
 
+  // Quando o dado salvo não pode ser lido, a carteira do usuário sumia e era
+  // substituída pela lista de exemplo — que o primeiro salvamento gravava por cima.
+  // Agora o original é preservado em outra chave e a tela avisa.
+  let avisoDeCarregamento = null;
+
   function carregar() {
+    let bruto = null;
     try {
-      const salvo = JSON.parse(localStorage.getItem(CHAVE_STORAGE) || 'null');
+      bruto = localStorage.getItem(CHAVE_STORAGE);
+      const salvo = JSON.parse(bruto || 'null');
       if (salvo && Array.isArray(salvo.ativos)) {
         return {
           config: { ...CONFIG_PADRAO, ...(salvo.config || {}) },
           ativos: salvo.ativos.map((a) => ({ ...a, id: a.id || novoId() })),
         };
       }
+      if (bruto) {
+        avisoDeCarregamento = 'O que estava salvo não tinha a lista de ativos e foi guardado à parte; a carteira voltou ao exemplo inicial.';
+        guardarCopiaDoEstadoIlegivel(bruto);
+      }
     } catch (erro) {
       console.warn('Não foi possível ler os dados salvos:', erro);
+      avisoDeCarregamento = `Os dados salvos no navegador estavam ilegíveis (${erro.message}). Eles foram guardados em uma cópia antes de a carteira voltar ao exemplo inicial.`;
+      guardarCopiaDoEstadoIlegivel(bruto);
     }
     return {
       config: { ...CONFIG_PADRAO },
       ativos: CARTEIRA_INICIAL.map((a) => ({ ...a, id: novoId() })),
     };
+  }
+
+  /** Guarda o texto original para não perder a carteira de quem salvou. */
+  function guardarCopiaDoEstadoIlegivel(bruto) {
+    if (!bruto) return;
+    try {
+      localStorage.setItem(`${CHAVE_STORAGE}.ilegivel`, bruto);
+    } catch (erro) {
+      console.warn('Não foi possível guardar a cópia do estado ilegível:', erro);
+    }
   }
 
   function salvar() {
@@ -140,9 +163,15 @@
     const modo = m.modo;
     const lucro = modo === 'lucro' ? inputCelula(ativo, 'lucroProjetado', 'placeholder="ex.: 5,1 bi"') : vazio;
     const qtd = modo === 'lucro' ? inputCelula(ativo, 'quantidadeAcoes', 'placeholder="ex.: 3 bi"') : vazio;
-    const sugestaoPayout = m.payoutDeMercado !== null
-      ? fmt0.format(m.payoutDeMercado)
-      : parseNumero(estado.config.payoutPadrao) ?? 'ex.: 70';
+    // O cinza precisa ser o número que a conta usaria se a célula ficasse vazia:
+    // mostrar o de mercado enquanto calc.js usa o padrão da carteira fazia a linha
+    // exibir um payout e calcular com outro.
+    const payoutPadrao = parseNumero(estado.config.payoutPadrao);
+    const sugestaoPayout = payoutPadrao !== null
+      ? fmt0.format(payoutPadrao)
+      : m.payoutDeMercado !== null
+        ? fmt0.format(m.payoutDeMercado)
+        : 'ex.: 70';
     const notaPayout = m.origemPayout === 'mercado'
       ? `<span class="sub" title="Payout dos últimos 12 meses: dividendo pago ÷ LPA. Preencha o campo para usar sua própria premissa.">12m: ${fmt0.format(m.payoutDeMercado)}%</span>`
       : '';
@@ -200,9 +229,11 @@
         ${celulasLucro}
         <td data-rotulo="Payout (%)" class="num">${p.payout}</td>
         <td data-rotulo="Yield aceitável (%)" class="num">${inputCelula(ativo, 'yieldAceitavel', `placeholder="${fmt0.format(m.yieldAceitavel)}"`)}${
-          m.yieldDoFallback
-            ? '<span class="sub" title="Sem yield na linha e sem padrão na configuração: vale o corte clássico de 6% do método Bazin.">padrão 6%</span>'
-            : ''
+          m.yieldSuspeito
+            ? '<span class="sub alerta" title="Yield fora do razoável. 6% se escreve 6, não 0,06 — com 0,06 o preço-teto sai 100 vezes maior e tudo vira SIM.">confira: % inteiro</span>'
+            : m.yieldDoFallback
+              ? '<span class="sub" title="Sem yield na linha e sem padrão na configuração: vale o corte clássico de 6% do método Bazin.">padrão 6%</span>'
+              : ''
         }</td>
         <td data-rotulo="LPA" class="num">${p.lpa}</td>
         <td data-rotulo="DPA" class="num">${p.dpa}</td>
@@ -346,6 +377,13 @@
         if (erros[chave]) ativo.erroAtualizacao = erros[chave];
         else if (info) delete ativo.erroAtualizacao;
         if (!info) return;
+        // Resposta sem nada aproveitável era contada como sucesso: o app anunciava
+        // "atualizado" e a cotação na tela continuava a mesma, sem explicação.
+        if (!positivo(info.preco) && !finito(info.lpa) && !positivo(info.dpa12m)) {
+          ativo.erroAtualizacao = 'A fonte respondeu sem preço para este ticker.';
+          erros[chave] = erros[chave] || ativo.erroAtualizacao;
+          return;
+        }
         atualizados++;
         // A resposta vem de fora (API ou servidor): nunca escrever "0,00"/"NaN" por
         // causa de um campo ausente ou de tipo inesperado.
@@ -356,16 +394,22 @@
         if (typeof info.nome === 'string' && info.nome && !ativo.nome) ativo.nome = info.nome;
         if (typeof info.setor === 'string' && info.setor && !ativo.setor) ativo.setor = info.setor;
         // LPA e DPA só entram se o campo ainda estiver vazio: premissa sua nunca é sobrescrita.
-        if (finito(info.lpa) && ativo.modo === 'lpa' && !String(ativo.lpaInformado || '').trim()) {
+        // Campo vazio OU preenchido pela própria busca: o que o usuário digitou nunca
+        // é tocado. Sem a marca de origem, o primeiro LPA buscado congelava para
+        // sempre — a cotação atualizava, o fundamento não, e a margem escorregava.
+        const podeEscrever = (campo, marca) => !String(ativo[campo] || '').trim() || ativo[marca];
+        if (finito(info.lpa) && ativo.modo === 'lpa' && podeEscrever('lpaInformado', 'lpaAutomatico')) {
           ativo.lpaInformado = fmt2.format(info.lpa);
+          ativo.lpaAutomatico = true;
         }
         // Guardar o provento pago vale para todos os modos: no modo dividendo ele
         // preenche o campo; nos demais, vira payout implícito e número de conferência.
         if (positivo(info.dpa12m)) {
           ativo.dpa12mMercado = info.dpa12m;
           ativo.fonteProventos = info.fonteProventos || null;
-          if (ativo.modo === 'dividendo' && !String(ativo.dpaInformado || '').trim()) {
+          if (ativo.modo === 'dividendo' && podeEscrever('dpaInformado', 'dpaAutomatico')) {
             ativo.dpaInformado = fmt2.format(info.dpa12m);
+            ativo.dpaAutomatico = true;
           }
         }
         if (info.fonteFundamentos === 'bolsai' && (finito(info.lpa) || positivo(info.dpa12m))) {
@@ -709,7 +753,9 @@
     const corpo = ordenar(linhas).map(({ ativo, metricas: m }) => [
       ativo.ticker || '', ativo.setor || '', m.modo,
       dec(m.cotacao), dec(m.lpa), dec(m.dpa),
-      dec(parseNumero(ativo.payout)), dec(m.yieldAceitavel),
+      // m.payout e não o texto da célula: com o payout vindo do padrão ou dos 12
+      // meses, a coluna saía vazia e a planilha não reproduzia o preço-teto.
+      dec(m.payout), dec(m.yieldAceitavel),
       dec(m.precoTeto), dec(m.precoAlvo), dec(m.margem === null ? null : m.margem * 100),
       { sim: 'SIM', nao: 'NAO', incompleto: 'FALTA DADO' }[m.veredito],
     ]);
@@ -761,12 +807,28 @@
       if (!ativo) return;
       const campo = alvo.dataset.campo;
       ativo[campo] = alvo.value;
+      // Digitou por cima: vira premissa sua e a busca não sobrescreve mais.
+      if (campo === 'lpaInformado') delete ativo.lpaAutomatico;
+      if (campo === 'dpaInformado') delete ativo.dpaAutomatico;
       if (campo === 'ticker') {
         ativo.ticker = alvo.value.toUpperCase();
-        // Ticker trocado invalida nome/setor/carimbo da cotação antiga.
+        // Ticker trocado invalida TUDO que veio do ticker anterior. Antes, só nome,
+        // setor e carimbo saíam: o LPA e os proventos do papel antigo continuavam,
+        // e a linha passava a mostrar preço de um ativo com fundamento de outro.
         delete ativo.nome;
         delete ativo.setor;
         delete ativo.cotacaoAtualizadaEm;
+        delete ativo.erroAtualizacao;
+        delete ativo.dpa12mMercado;
+        delete ativo.fonteProventos;
+        if (ativo.lpaAutomatico) {
+          delete ativo.lpaInformado;
+          delete ativo.lpaAutomatico;
+        }
+        if (ativo.dpaAutomatico) {
+          delete ativo.dpaInformado;
+          delete ativo.dpaAutomatico;
+        }
       }
       if (campo === 'cotacao') {
         delete ativo.cotacaoAtualizadaEm;
@@ -801,10 +863,21 @@
     });
 
     el('#btn-adicionar').addEventListener('click', () => {
-      estado.ativos.unshift({ id: novoId(), ticker: '', modo: 'lpa' });
+      const novo = { id: novoId(), ticker: '', modo: 'lpa' };
+      estado.ativos.unshift(novo);
+      // Linha nova não tem margem nem veredito: com filtro ligado ela nasceria
+      // escondida, e o cursor ia parar no ticker de OUTRA linha.
+      if (estado.config.busca || estado.config.somenteComprar) {
+        Object.assign(estado.config, { busca: '', somenteComprar: false });
+        sincronizarConfig();
+        status('Filtros limpos para a linha nova aparecer.', '');
+      }
       render();
-      const primeiro = document.querySelector('#tabela tbody input.ticker');
-      if (primeiro) primeiro.focus();
+      const campo = document.querySelector(`#tabela tbody tr[data-id="${novo.id}"] input.ticker`);
+      if (campo) {
+        campo.focus();
+        campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
     });
 
     el('#btn-cotacoes').addEventListener('click', atualizarCotacoes);
@@ -880,6 +953,13 @@
     const local = await servidor();
     if (!local.disponivel && !String(estado.config.token || '').trim()) return;
     await atualizarCotacoes();
+  }
+
+  if (avisoDeCarregamento) {
+    // Precisa ser dito: a carteira do usuário não pode sumir caladamente.
+    setTimeout(() => status(avisoDeCarregamento, 'alerta', [
+      `A cópia ficou salva no navegador na chave "${CHAVE_STORAGE}.ilegivel".`,
+    ]), 0);
   }
 
   sincronizarConfig();

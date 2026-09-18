@@ -40,6 +40,17 @@
     return null;
   };
 
+  /**
+   * Prazo de toda consulta externa. Sem isso, uma fonte que aceita a conexão e não
+   * responde segurava a atualização por minutos (o padrão do Node desiste perto dos
+   * 5) — na tela, o botão ficava "Buscando…" até alguém recarregar a página.
+   */
+  const PRAZO_BOLSAI = 10000;
+
+  const comPrazo = (ms) => (typeof AbortSignal === 'function' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : undefined);
+
   /** Achata um nível de aninhamento (data/result/fundamentals) para procurar campos. */
   function achatar(corpo) {
     if (!corpo || typeof corpo !== 'object') return {};
@@ -79,7 +90,7 @@
    * @returns {Promise<{dados: Object, erros: Object, avisos: string[]}>}
    */
   async function buscarFundamentos(tickers, opcoes) {
-    const { chave, fetchImpl, base = BASE, dividendos = true } = opcoes || {};
+    const { chave, fetchImpl, base = BASE, dividendos = true, prazoMs = PRAZO_BOLSAI } = opcoes || {};
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) throw new Error('fetch indisponível neste ambiente.');
 
@@ -90,7 +101,7 @@
     const cabecalhos = { Accept: 'application/json', ...(chave ? { 'X-API-Key': chave } : {}) };
 
     const pedir = async (caminho) => {
-      const resposta = await http(`${base}${caminho}`, { headers: cabecalhos });
+      const resposta = await http(`${base}${caminho}`, { headers: cabecalhos, signal: comPrazo(prazoMs) });
       if (!resposta.ok) return { status: resposta.status };
       return { corpo: await resposta.json() };
     };

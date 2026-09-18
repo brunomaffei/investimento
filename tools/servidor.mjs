@@ -24,6 +24,7 @@ import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { buscarCotacoes, normalizar, buscarTickersParecidos, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
@@ -56,7 +57,10 @@ async function versaoDoGit(raiz) {
   }
 }
 
-const RAIZ = resolve(new URL('..', import.meta.url).pathname);
+// fileURLToPath e não .pathname: em pasta com espaço ou acento o pathname vem
+// percent-encoded ('Investimentos%20A%C3%A7%C3%B5es') e o servidor subia
+// respondendo 404 em tudo — tela em branco sem explicação.
+const RAIZ = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const TIPOS = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -75,6 +79,9 @@ function lerArgumentos(argv) {
   };
   return {
     porta: Number(valor('--porta') || process.env.PORT || 8787),
+    // Só esta máquina, por padrão: em 0.0.0.0 qualquer um no mesmo Wi-Fi usaria o
+    // seu token da brapi e leria os arquivos da pasta. --host 0.0.0.0 libera de propósito.
+    host: valor('--host') || process.env.HOST || '127.0.0.1',
     token: valor('--token') || process.env.BRAPI_TOKEN || '',
     base: process.env.BRAPI_BASE || BASE,
     chaveBolsai: valor('--bolsai') || process.env.BOLSAI_KEY || '',
@@ -92,7 +99,7 @@ function lerArgumentos(argv) {
 }
 
 const {
-  porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2, baseYahoo, usarYahoo,
+  porta, host, token, base, chaveBolsai, baseBolsai, baseV2, usarV2, baseYahoo, usarYahoo,
   baseFundamentus, horasDeCache,
 } = lerArgumentos(process.argv);
 
@@ -225,7 +232,11 @@ async function recuperarFaltantes(resultado, tokenEmUso) {
 
   // Código que não existe em nenhuma versão costuma ser ticker extinto ou com
   // grafia errada: sugerir os parecidos poupa o usuário de descobrir sozinho.
+  // Só vale para erro de TICKER: com token recusado, todos falham e isso virava
+  // uma consulta extra por ativo, além de culpar o código do papel pelo erro do token.
+  const PARECE_TICKER_AUSENTE = /não encontrado|not found|404|inexistente/i;
   for (const ticker of Object.keys(resultado.erros)) {
+    if (!PARECE_TICKER_AUSENTE.test(resultado.erros[ticker] || '')) continue;
     const parecidos = await buscarTickersParecidos(ticker.replace(/\d+$/, ''), {
       token: tokenEmUso,
       base,
@@ -278,7 +289,17 @@ const json = (resposta, codigo, corpo) => {
 
 /** Serve um arquivo do repositório, barrando qualquer caminho que escape da raiz. */
 async function servirArquivo(caminhoPedido, resposta) {
-  const relativo = normalize(decodeURIComponent(caminhoPedido)).replace(/^(\.\.[/\\])+/, '');
+  let decodificado;
+  try {
+    decodificado = decodeURIComponent(caminhoPedido);
+  } catch {
+    // '%' solto na URL (link quebrado, favorito antigo, varredura de rede) fazia
+    // decodeURIComponent lançar fora do try e DERRUBAR o servidor: o app saía do ar
+    // no meio do uso e só voltava reiniciando no terminal.
+    resposta.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Endereço inválido');
+    return;
+  }
+  const relativo = normalize(decodificado).replace(/^(\.\.[/\\])+/, '');
   const arquivo = join(RAIZ, relativo === '/' || relativo === '.' ? 'index.html' : relativo);
   if (!resolve(arquivo).startsWith(RAIZ)) {
     resposta.writeHead(403).end('Acesso negado');
@@ -377,18 +398,6 @@ const servidor = createServer(async (pedido, resposta) => {
         if (comProventos) console.log(`[dividendos] ${comProventos} ativo(s) com provento de 12 meses`);
       }
 
-      // Último degrau: o que ninguém trouxe, busca no Yahoo — grátis e sem cadastro.
-      if (fundamentos && usarYahoo) {
-        const { preenchidos, falhas } = await completarProventosPeloYahoo(resultado.dados);
-        if (preenchidos.length) {
-          avisos.push(`Proventos de ${preenchidos.length} ativo(s) vieram do Yahoo (fonte gratuita): ${preenchidos.join(', ')}.`);
-          console.log(`[yahoo] ${preenchidos.length} ativo(s) com provento de 12 meses`);
-        }
-        if (falhas.length && !preenchidos.length) {
-          avisos.push(`O Yahoo também não trouxe proventos: ${falhas.slice(0, 3).join('; ')}.`);
-        }
-      }
-
       if (fundamentos && chaveBolsai) {
         const extras = await buscarFundamentos(Object.keys(resultado.dados), {
           chave: chaveBolsai,
@@ -398,7 +407,11 @@ const servidor = createServer(async (pedido, resposta) => {
           const alvo = resultado.dados[ticker];
           if (!alvo) continue;
           if (info.lpa !== null) alvo.lpa = info.lpa;
-          if (info.dpa12m !== null) alvo.dpa12m = info.dpa12m;
+          if (info.dpa12m !== null) {
+            alvo.dpa12m = info.dpa12m;
+            // Sem isto, a tela creditava ao Yahoo um número que veio da bolsai.
+            alvo.fonteProventos = 'bolsai';
+          }
           alvo.fonteFundamentos = 'bolsai';
           alvo.origemFundamentos = info.origem;
           if (info.chavesRecebidas) alvo.chavesRecebidas = info.chavesRecebidas;
@@ -412,6 +425,23 @@ const servidor = createServer(async (pedido, resposta) => {
         const comLpa = Object.values(extras.dados).filter((d) => d.lpa !== null).length;
         console.log(`[bolsai] ${Object.keys(extras.dados).length} consultados, ${comLpa} com LPA`);
       }
+      // Último degrau: o que NINGUÉM trouxe, busca no Yahoo — grátis e sem cadastro.
+      // Precisa rodar depois da bolsai: rodando antes, consultava o Yahoo para todos
+      // os tickers e ainda assim o número final vinha da bolsai.
+      if (fundamentos && usarYahoo) {
+        const { preenchidos, falhas } = await completarProventosPeloYahoo(resultado.dados);
+        if (preenchidos.length) {
+          avisos.push(`Proventos de ${preenchidos.length} ativo(s) vieram do Yahoo (fonte gratuita): ${preenchidos.join(', ')}.`);
+          console.log(`[yahoo] ${preenchidos.length} ativo(s) com provento de 12 meses`);
+        }
+        // Avisar mesmo quando alguém deu certo: com 1 acerto e 19 falhas, o usuário
+        // via só o acerto e não entendia por que 19 linhas ficaram sem provento.
+        if (falhas.length) {
+          const amostra = falhas.slice(0, 3).join('; ');
+          avisos.push(`O Yahoo não trouxe proventos de ${falhas.length} ativo(s): ${amostra}${falhas.length > 3 ? '…' : ''}.`);
+        }
+      }
+
       if (!tokenEmUso) {
         avisos.push('Servidor sem BRAPI_TOKEN e sem token no app: só os tickers liberados pela brapi respondem.');
       } else if (!token) {
@@ -428,10 +458,13 @@ const servidor = createServer(async (pedido, resposta) => {
   return servirArquivo(url.pathname, resposta);
 });
 
-servidor.listen(porta, () => {
+servidor.listen(porta, host, () => {
   // Porta real: com --porta 0 o sistema escolhe uma livre (usado pelos testes).
   const escolhida = servidor.address().port;
   console.log(`Preço-teto no ar: http://localhost:${escolhida}`);
+  if (host !== '127.0.0.1' && host !== 'localhost') {
+    console.log(`Atenção: escutando em ${host} — outras máquinas da rede alcançam este servidor e o token nele.`);
+  }
   if (versao?.sha) console.log(`Versão servida: ${versao.sha}${versao.branch ? ` (${versao.branch})` : ''}`);
   console.log(chaveBolsai
     ? 'Fundamentos (LPA e proventos) pela bolsai: chave carregada.'

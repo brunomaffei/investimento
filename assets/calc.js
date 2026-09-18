@@ -24,6 +24,12 @@
   // adivinhar que o "6" cinza do campo era só um exemplo.
   const YIELD_PADRAO = 6;
 
+  // Faixa de sanidade do yield aceitável, em pontos percentuais. Fora dela quase
+  // sempre é erro de unidade: quem digita 0,06 pensando em "6%" recebia preço-teto
+  // 100 vezes maior e a carteira inteira virava SIM.
+  const YIELD_MINIMO_RAZOAVEL = 1;
+  const YIELD_MAXIMO_RAZOAVEL = 30;
+
   const MULTIPLICADORES = {
     k: 1e3, mil: 1e3,
     m: 1e6, mi: 1e6, mm: 1e6, milhao: 1e6, milhoes: 1e6,
@@ -68,9 +74,13 @@
     } else if (pontos > 1) {
       texto = texto.replace(/\./g, '');
     } else if (pontos === 1) {
-      // Ambíguo: "1.234" é milhar, "20.56" é decimal. Grupo final de 3 dígitos = milhar.
-      const [, decimais] = texto.split('.');
-      if (decimais.length === 3) texto = texto.replace('.', '');
+      // Ambíguo: "1.234" é milhar, "20.56" é decimal. Grupo final de 3 dígitos indica
+      // milhar — mas só quando a parte inteira tem cara de milhar: "0.850" é o LPA
+      // copiado de site em inglês, e virar 850 inflava o preço-teto em mil vezes.
+      const [inteiros, decimais] = texto.split('.');
+      const pareceMilhar = decimais.length === 3
+        && /^-?[1-9]\d{0,2}$/.test(inteiros);
+      if (pareceMilhar) texto = texto.replace('.', '');
     }
 
     const numero = Number(texto);
@@ -113,7 +123,12 @@
         ? lucro / quantidade
         : null;
 
-    const payoutDeMercado = dpaDeMercado !== null && lpa ? (dpaDeMercado / lpa) * 100 : null;
+    // Só faz sentido com lucro positivo: em prejuízo, o payout de mercado saía
+    // negativo e, multiplicado por um LPA também negativo, devolvia DPA positivo —
+    // empresa no vermelho ganhava preço-teto e selo SIM.
+    const payoutDeMercado = dpaDeMercado !== null && lpa !== null && lpa > 0
+      ? (dpaDeMercado / lpa) * 100
+      : null;
     const payout = payoutDaLinha !== null
       ? payoutDaLinha
       : payoutPadrao !== null
@@ -164,6 +179,7 @@
       cotacao,
       yieldAceitavel,
       yieldDoFallback,
+      yieldSuspeito: yieldAceitavel < YIELD_MINIMO_RAZOAVEL || yieldAceitavel > YIELD_MAXIMO_RAZOAVEL,
       lpa,
       dpa,
       precoTeto,
@@ -203,5 +219,8 @@
     };
   }
 
-  return { parseNumero, avaliarAtivo, avaliarCarteira, MULTIPLICADORES, YIELD_PADRAO };
+  return {
+    parseNumero, avaliarAtivo, avaliarCarteira, MULTIPLICADORES,
+    YIELD_PADRAO, YIELD_MINIMO_RAZOAVEL, YIELD_MAXIMO_RAZOAVEL,
+  };
 });

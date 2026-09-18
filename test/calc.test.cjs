@@ -37,6 +37,15 @@ teste('negativos são preservados', () => {
   assert.equal(parseNumero('-1.500,50'), -1500.5);
 });
 
+teste('decimal com ponto e zero à esquerda não vira milhar', () => {
+  // "0.850" é LPA copiado de site em inglês. Virando 850, o preço-teto saía mil
+  // vezes maior e a linha ganhava selo SIM com margem de quatro dígitos.
+  assert.equal(parseNumero('0.850'), 0.85);
+  assert.equal(parseNumero('0.123'), 0.123);
+  assert.equal(parseNumero('12.500'), 12500);
+  assert.equal(parseNumero('1234.567'), 1234.567);
+});
+
 console.log('avaliarAtivo — casos reais da planilha de referência');
 const cfg = { yieldPadrao: 6, margemMinima: 0 };
 
@@ -258,6 +267,31 @@ teste('yield inválido ou zero cai no padrão em vez de gerar Infinity', () => {
     assert.equal(m.yieldAceitavel, 6, `yield ${JSON.stringify(ruim)} deveria cair no padrão`);
     assert.ok(Number.isFinite(m.precoTeto));
   }
+});
+
+console.log('proteções contra número que engana');
+teste('empresa com prejuízo não ganha preço-teto positivo', () => {
+  // Payout de mercado negativo (provento ÷ LPA negativo) multiplicado pelo LPA
+  // também negativo devolvia DPA positivo: o vermelho virava SIM.
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 10, lpaInformado: '-2,00', dpa12mMercado: 1 }, { yieldPadrao: 6 });
+  assert.equal(m.payoutDeMercado, null);
+  assert.equal(m.dpa, null);
+  assert.equal(m.precoTeto, null);
+  assert.equal(m.veredito, 'incompleto');
+});
+teste('lucro positivo continua derivando o payout de mercado', () => {
+  const m = avaliarAtivo({ modo: 'lpa', cotacao: 10, lpaInformado: '2,00', dpa12mMercado: 1 }, { yieldPadrao: 6 });
+  perto(m.payoutDeMercado, 50);
+  perto(m.dpa, 1);
+});
+teste('yield fora da faixa razoável é marcado como suspeito', () => {
+  const erroDeUnidade = avaliarAtivo({ modo: 'dividendo', cotacao: 20, dpaInformado: '1,00', yieldAceitavel: '0,06' }, {});
+  assert.equal(erroDeUnidade.yieldSuspeito, true, '0,06 é quem quis digitar 6%');
+  perto(erroDeUnidade.precoTeto, 1666.67, 0.1);
+  const exagerado = avaliarAtivo({ modo: 'dividendo', cotacao: 20, dpaInformado: '1,00', yieldAceitavel: '90' }, {});
+  assert.equal(exagerado.yieldSuspeito, true);
+  const normal = avaliarAtivo({ modo: 'dividendo', cotacao: 20, dpaInformado: '1,00', yieldAceitavel: '6' }, {});
+  assert.equal(normal.yieldSuspeito, false);
 });
 
 console.log('avaliarCarteira');
