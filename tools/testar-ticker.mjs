@@ -30,6 +30,11 @@ if (!ticker) {
 const base = process.env.BRAPI_BASE || BASE;
 const baseV2 = process.env.BRAPI_V2_BASE || BASE_V2;
 
+// Placeholders que aparecem quando o exemplo da documentação é colado literalmente.
+const PARECE_EXEMPLO = /^(seu[_-]?token|sua[_-]?chave|token|chave|xxx+|<.*>|\.\.\.)$/i;
+
+const statusVistos = [];
+
 /** Executa uma rota e resume a resposta em uma linha. */
 async function rota(rotulo, url, comHeader) {
   const cabecalhos = { Accept: 'application/json' };
@@ -38,6 +43,7 @@ async function rota(rotulo, url, comHeader) {
   try {
     const resposta = await fetch(url, { headers: cabecalhos });
     const ms = Date.now() - inicio;
+    statusVistos.push(resposta.status);
     if (!resposta.ok) {
       console.log(`  ${resposta.status === 200 ? '✅' : '❌'} ${rotulo.padEnd(34)} HTTP ${resposta.status}  ${ms} ms`);
       return null;
@@ -64,10 +70,26 @@ async function rota(rotulo, url, comHeader) {
 const comToken = (url) => (token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url);
 
 console.log(`\nInvestigando ${ticker}${token ? ' (com token)' : ' (sem token)'}\n`);
+if (PARECE_EXEMPLO.test(token)) {
+  console.log(`  ⚠️  O token informado é "${token}" — parece o texto de exemplo, não uma chave real.\n`);
+}
 await rota('v1: cotação', comToken(`${base}${ticker}`));
 await rota('v1: cotação + módulos pagos', comToken(`${base}${ticker}?modules=defaultKeyStatistics&dividends=true`));
 await rota('v2: cotação', `${baseV2}/quote?symbols=${ticker}`, true);
 await rota('v2: dividendos (ações)', `${baseV2}/dividends?symbols=${ticker}`, true);
 await rota('v2: dividendos (FII)', `${paraFii(baseV2)}/dividends?symbols=${ticker}`, true);
-console.log('\nHTTP 404 em todas as rotas indica que a brapi não tem esse código — confira a grafia na B3.');
-console.log('HTTP 403 significa que a rota existe, mas seu plano não a cobre.\n');
+
+const todas401 = statusVistos.length > 0 && statusVistos.every((s) => s === 401);
+if (todas401) {
+  // Isola a variável: PETR4 é liberada pela brapi sem token nenhum. Se ela
+  // responder, o problema é a chave — não a API, a rede ou o ticker.
+  console.log('\nTodas as rotas recusaram com 401. Testando um ticker livre SEM token para isolar:');
+  await rota('v1: PETR4 sem token (controle)', `${base}PETR4`);
+  console.log('\nSe o controle acima respondeu, o problema é o token, não o ticker.');
+  console.log('Confira se você exportou a chave real (o texto "seu_token" do exemplo não serve):');
+  console.log('  BRAPI_TOKEN=<sua chave de brapi.dev/dashboard> npm run ticker -- ' + ticker);
+  console.log('  ou: npm run ticker -- ' + ticker + ' --token <sua chave>\n');
+} else {
+  console.log('\nHTTP 404 em todas as rotas indica que a brapi não tem esse código — confira a grafia na B3.');
+  console.log('HTTP 403 significa que a rota existe, mas seu plano não a cobre.\n');
+}

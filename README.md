@@ -188,7 +188,9 @@ Causas mais comuns, em ordem:
 
    O comando mostra o que cada rota responde (v1, v1 com módulos, v2, dividendos de
    ação e de FII). 404 em todas = a brapi não tem esse código; 403 = a rota existe,
-   mas seu plano não a cobre.
+   mas seu plano não a cobre; **401 em todas** = o token do ambiente está sendo
+   recusado, e aí o próprio comando repete a consulta num ticker livre sem token
+   para provar que o problema é a chave, não o ticker.
 7. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
    `EXEMPLO` é ignorada de propósito.
 
@@ -311,7 +313,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 166 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 168 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 

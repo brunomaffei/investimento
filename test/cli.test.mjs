@@ -119,6 +119,45 @@ try {
     assert.ok(!stdout.includes('TOKEN-DO-AMBIENTE'), 'o token não pode ser impresso');
   });
 
+  await teste('401 em todas as rotas é diagnosticado como problema de token', async () => {
+    // Servidor que recusa tudo, como a brapi faz com chave inválida.
+    const recusaTudo = createServer((pedido, resposta) => {
+      // O ticker livre sem token responde, para servir de controle.
+      if (pedido.url.includes('PETR4') && !pedido.url.includes('token=')) {
+        resposta.writeHead(200, { 'Content-Type': 'application/json' });
+        return resposta.end(JSON.stringify({ results: [{ symbol: 'PETR4', regularMarketPrice: 48.5 }] }));
+      }
+      return resposta.writeHead(401).end('{}');
+    });
+    recusaTudo.listen(0);
+    await once(recusaTudo, 'listening');
+    const porta = recusaTudo.address().port;
+    try {
+      const { stdout } = await executar(process.execPath, ['tools/testar-ticker.mjs', 'CPLE6'], {
+        cwd: RAIZ,
+        env: {
+          ...process.env,
+          BRAPI_BASE: `http://127.0.0.1:${porta}/api/quote/`,
+          BRAPI_V2_BASE: `http://127.0.0.1:${porta}/api/v2/stocks`,
+          BRAPI_TOKEN: 'chave-invalida',
+        },
+      });
+      assert.match(stdout, /Todas as rotas recusaram com 401/);
+      assert.match(stdout, /PETR4 sem token \(controle\)\s+preço 48\.5/, 'o controle prova que a API responde');
+      assert.match(stdout, /o problema é o token, não o ticker/);
+    } finally {
+      recusaTudo.close();
+    }
+  });
+
+  await teste('token com cara de exemplo é apontado antes dos testes', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/testar-ticker.mjs', 'CPLE6'], {
+      cwd: RAIZ,
+      env: { ...process.env, BRAPI_BASE, BRAPI_V2_BASE, BRAPI_TOKEN: 'seu_token' },
+    });
+    assert.match(stdout, /parece o texto de exemplo/);
+  });
+
   await teste('sem ticker, mostra o uso', async () => {
     await assert.rejects(
       executar(process.execPath, ['tools/testar-ticker.mjs'], { cwd: RAIZ }),
