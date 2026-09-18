@@ -55,8 +55,8 @@ atualização sozinha — a tabela aparece com o preço de hoje, sem clique. A c
 ### Nada bloqueia a carteira por campo vazio
 
 **Yield aceitável** vazio na linha e na configuração vale **6%** — o corte clássico do
-Bazin. Antes, campo vazio deixava toda a tabela em "falta yield", e o placeholder 
-parecia um valor preenchido. A linha mostra  quando está usando esse
+Bazin. Antes, campo vazio deixava toda a tabela em "falta yield", e o placeholder `6`
+parecia um valor preenchido. A linha mostra `padrão 6%` quando está usando esse
 fallback. **Margem mínima** vazia vale 0%.
 
 A caixa *buscar também LPA e dividendos* vem **marcada**: com o Yahoo como fonte
