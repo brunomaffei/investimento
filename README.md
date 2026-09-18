@@ -3,6 +3,10 @@
 Ferramenta de uso próprio para responder, em poucos minutos por mês, uma pergunta só:
 **o preço de hoje está abaixo do preço máximo que eu aceito pagar por esse ativo?**
 
+A resposta vem em duas camadas: o **rastreador** faz a conta para a bolsa inteira de
+uma vez (todas as ações e todos os FIIs, sem você digitar ticker) e a **carteira**
+refina os poucos ativos que você acompanha com as suas premissas de lucro e payout.
+
 Duas formas de rodar, sem build e sem dependência:
 
 ```bash
@@ -29,6 +33,53 @@ repassado ao servidor local (mesma máquina, e sem isso ele seria ignorado). O t
 do servidor sempre tem precedência, e nenhum dos dois é registrado no log.
 
 ![Tela do app](docs/tela.png)
+
+## Rastrear a bolsa inteira
+
+O app abre já mostrando **todas as ações e todos os FIIs da B3** com preço-teto e
+margem calculados, ordenados do maior desconto para o menor. Nada de montar lista:
+você filtra e olha o topo.
+
+```bash
+npm start            # o painel "A bolsa inteira, já calculada" abre junto com a página
+npm run rastrear     # o mesmo no terminal
+npm run rastrear -- --yield 8 --tipo fii --liquidez "1 mi" --top 20
+```
+
+Para cada papel, o provento dos últimos 12 meses sai de `cotação × dividend yield`,
+e daí segue a conta de sempre: `preço-teto = provento ÷ yield aceitável`. É o mesmo
+`Calc.avaliarAtivo` da carteira — rastreador e tabela nunca divergem, e um teste
+compara linha a linha para garantir isso.
+
+| Filtro | Para quê |
+| --- | --- |
+| Ações / FIIs | separar os dois mundos |
+| Liquidez mínima | tirar papel que quase não negocia (aceita `1 mi`) |
+| Só os abaixo do teto | ver apenas quem passou no corte |
+| Incluir quem não pagou provento | por padrão fica fora: sem provento não há teto |
+| Buscar | ticker ou segmento (`logistica`, `papel`, `shopping`) |
+
+O botão **+ carteira** leva o papel para a tabela de baixo já no modo dividendo, com
+cotação e provento preenchidos — de lá você troca por sua própria projeção.
+
+O que o rastreador **não** é: o provento usado é o que a empresa **já pagou**, não uma
+projeção, e o dado tem atraso. Serve para triagem — o papel que aparecer no topo ainda
+merece leitura antes da compra. Yield acima de 20% costuma ser provento extraordinário
+que não se repete; a linha ganha um aviso `!` nesses casos, e também quando a liquidez
+é baixa demais.
+
+Detalhes de funcionamento:
+
+- A fonte é o [Fundamentus](https://www.fundamentus.com.br) (duas páginas, sem token e
+  sem cadastro). A leitura é guiada pelos **nomes das colunas**, não por posição: se a
+  ordem mudar, continua funcionando. A página vem em ISO-8859-1 — decodificar como
+  UTF-8 quebraria até o cabeçalho `Cotação`, e a tabela sairia vazia sem erro nenhum.
+- O servidor guarda o resultado por 6 horas (`UNIVERSO_HORAS`) em memória e em disco,
+  então reabrir a página é instantâneo. **Recarregar** força a busca na fonte.
+- Se a fonte cair, o servidor devolve o último resultado guardado **avisando**, em vez
+  de mostrar tela vazia.
+- O rastreador precisa do servidor local: ler outro site direto do navegador é barrado
+  por CORS. Sem `npm start`, o painel explica isso em vez de ficar rodando.
 
 ## A conta
 
@@ -121,11 +172,15 @@ Escolha por ativo, na coluna **Base**:
 
 ## Rotina mensal sugerida
 
-1. Clique em **↻ Atualizar cotações** (preço, setor e LPA vêm da [brapi.dev](https://brapi.dev)).
-2. Confira o payout derivado (`12m: …`) dos ativos que divulgaram balanço e digite o
-   seu quando discordar.
-3. Ordene pela coluna **Margem de seg.** e marque *mostrar só os SIM*.
-4. Exporte o **CSV** se quiser guardar o histórico da decisão daquele mês.
+1. `npm start`. O rastreador já abre com a bolsa inteira ordenada pela maior margem.
+2. No rastreador, marque *só os que estão abaixo do teto*, corte a liquidez baixa e
+   olhe o topo da lista. **+ carteira** nos que interessarem.
+3. Na carteira, clique em **↻ Atualizar cotações** (preço, setor e LPA vêm da
+   [brapi.dev](https://brapi.dev)).
+4. Confira o payout derivado (`12m: …`) dos ativos que divulgaram balanço e digite o
+   seu quando discordar — é aqui que a sua projeção substitui o provento já pago.
+5. Ordene pela coluna **Margem de seg.** e marque *mostrar só os SIM*.
+6. Exporte o **CSV** se quiser guardar o histórico da decisão daquele mês.
 
 ## Cotação automática
 
@@ -278,6 +333,7 @@ A corrente foi montada para que **nenhum campo dependa de plano pago**:
 
 | Dado | Fonte gratuita | Precisa de cadastro? |
 | --- | --- | --- |
+| **Mercado inteiro (cotação + DY de todas as ações e FIIs)** | **Fundamentus** — `resultado.php` e `fii_resultado.php` | **não, nem token** |
 | Cotação, nome, setor | brapi v2 (token grátis, 15 mil req/mês) | sim, token grátis |
 | LPA | brapi — `earningsPerShare` vem na resposta comum | o mesmo token |
 | **Proventos (DPA 12m)** | **Yahoo Finance v8** — `chart/BBAS3.SA?events=div` | **não, nem token** |
@@ -364,8 +420,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 197 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 103 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 255 testes de cálculo, cotação, rastreador, servidor e CLI (node puro)
+npm run test:ui   # 101 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -390,10 +446,13 @@ assets/brapi-v2.js            cliente da API v2 da brapi (cotação e dividendos
 assets/proventos.js           soma de proventos de 12 meses, tolerante ao formato da fonte
 assets/yahoo.js               proventos e preço pelo Yahoo (grátis, sem cadastro)
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
+assets/fundamentus.js         universo completo da B3 (cotação e DY de ações e FIIs)
+assets/rastreador.js          aplica o preço-teto ao mercado inteiro, com filtros e ordem
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido
 tools/testar-ticker.mjs       investiga um ticker em todas as rotas da brapi
 tools/atualizar-cotacoes.mjs  atualizador de preços por linha de comando
+tools/rastrear.mjs            roda o rastreador no terminal (npm run rastrear)
 tools/captura.mjs             gera a captura de tela do README
 test/                         testes de cálculo, de cotação e de interface
 ```

@@ -59,6 +59,8 @@ await once(yahooFalso, 'listening');
 const { porta, processo: servidor } = await subirServidor(['--token', 'TOKEN-SECRETO'], {
   BRAPI_BASE: baseFalsa,
   YAHOO_BASE: `http://127.0.0.1:${yahooFalso.address().port}/v8/finance/chart`,
+  // Sem rastreador nestes testes: endereço morto faz a tela avisar na hora.
+  FUNDAMENTUS_BASE: 'http://127.0.0.1:1',
 });
 
 let servidorSemToken = null;

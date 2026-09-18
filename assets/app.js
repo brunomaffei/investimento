@@ -240,6 +240,8 @@
       : `<tr class="vazia"><td colspan="${colunasVisiveis().length}">Nenhum ativo para mostrar. Ajuste o filtro ou clique em “+ Ativo”.</td></tr>`;
 
     el('#contagem').textContent = `${visiveis.length} de ${resumo.total} ativo(s)`;
+    // O rastreador mostra quem já está na carteira: tirar uma linha aqui muda lá.
+    if (universo) renderRastreador();
     salvar();
   }
 
@@ -433,15 +435,253 @@
    * @param {string} texto resumo curto
    * @param {string} [tipo] 'ok' | 'alerta' | 'erro'
    * @param {string[]} [detalhes]
+   * @param {string} [seletor] onde escrever ('#status' da carteira ou '#r-status' do rastreador)
    */
-  function status(texto, tipo = '', detalhes = []) {
-    const alvo = el('#status');
+  function status(texto, tipo = '', detalhes = [], seletor = '#status') {
+    const alvo = el(seletor);
     const lista = (detalhes || []).filter(Boolean);
     alvo.className = `status ${tipo}`;
     alvo.innerHTML = lista.length
       ? `${escapar(texto)} <button type="button" class="ver-detalhes" aria-expanded="false">${lista.length} aviso${lista.length > 1 ? 's' : ''}</button>
          <ul class="detalhes" hidden>${lista.map((d) => `<li>${escapar(d)}</li>`).join('')}</ul>`
       : escapar(texto);
+  }
+
+  // ------------------------------------------------------------------ rastreador
+
+  const { rastrear: rastrearMercado } = window.Rastreador;
+
+  // Universo = mercado inteiro vindo do servidor local. Fica em memória: filtrar e
+  // reordenar não pode custar uma nova requisição.
+  let universo = null;
+  let buscandoUniverso = false;
+
+  const filtros = () => ({ ...CONFIG_PADRAO.rastreador, ...(estado.config.rastreador || {}) });
+
+  function salvarFiltro(mudanca) {
+    estado.config.rastreador = { ...filtros(), ...mudanca };
+    salvar();
+  }
+
+  const COLUNAS_RASTREADOR = [
+    { chave: 'ticker', rotulo: 'Ticker', ordenavel: true },
+    { chave: 'cotacao', rotulo: 'Cotação', ordenavel: true, num: true },
+    { chave: 'dy', rotulo: 'DY 12m', ordenavel: true, num: true },
+    { chave: 'dpa', rotulo: 'Provento 12m', ordenavel: true, num: true },
+    { chave: 'precoTeto', rotulo: 'Preço-teto', ordenavel: true, num: true },
+    { chave: 'margem', rotulo: 'Margem de seg.', ordenavel: true, num: true, classe: 'col-margem' },
+    { chave: 'veredito', rotulo: 'Comprar?', classe: 'col-veredito' },
+    { chave: 'pvp', rotulo: 'P/VP', ordenavel: true, num: true },
+    { chave: 'liquidez', rotulo: 'Liquidez/dia', ordenavel: true, num: true },
+    { chave: 'acao', rotulo: '' },
+  ];
+
+  function cabecalhoRastreador() {
+    const { ordenarPor, decrescente } = filtros();
+    return COLUNAS_RASTREADOR.map((c) => {
+      const base = `${c.num ? 'num ' : ''}${c.classe || ''}`;
+      if (!c.ordenavel) return `<th class="${base}">${c.rotulo}</th>`;
+      const ativa = ordenarPor === c.chave;
+      const seta = ativa ? (decrescente ? ' ↓' : ' ↑') : ' ⇅';
+      return `<th class="${base} ordenavel${ativa ? ' ativa' : ''}" data-ordenar="${c.chave}">${c.rotulo}<span class="seta">${seta}</span></th>`;
+    }).join('');
+  }
+
+  const naCarteira = (ticker) => estado.ativos.some((a) => String(a.ticker || '').toUpperCase() === ticker);
+
+  function linhaRastreador({ item, metricas: m, alertas }) {
+    const aviso = alertas.length
+      ? `<span class="tag alerta" title="${escapar(alertas.join(' · '))}">!</span>`
+      : '';
+    const jaTem = naCarteira(item.ticker);
+    return `
+      <tr data-ticker="${escapar(item.ticker)}">
+        <td class="col-ticker">
+          <strong>${escapar(item.ticker)}</strong>${aviso}
+          <span class="sub">${escapar(item.segmento || (item.tipo === 'fii' ? 'FII' : 'Ação'))}</span>
+        </td>
+        <td data-rotulo="Cotação" class="num">${fmtMoeda(m.cotacao)}</td>
+        <td data-rotulo="DY 12m" class="num">${item.dy === null ? vazio : `${fmt2.format(item.dy)}%`}</td>
+        <td data-rotulo="Provento 12m" class="num">${fmtMoeda(m.dpa)}</td>
+        <td data-rotulo="Preço-teto" class="num forte">${fmtMoeda(m.precoTeto)}</td>
+        <td data-rotulo="Margem de segurança" class="num forte col-margem ${classeMargem(m.margem, m.veredito)}">${fmtPct(m.margem)}</td>
+        <td data-rotulo="Comprar?" class="col-veredito">${badgeVeredito(m)}</td>
+        <td data-rotulo="P/VP" class="num">${item.pvp === null ? vazio : fmt2.format(item.pvp)}</td>
+        <td data-rotulo="Liquidez por dia" class="num">${item.liquidez === null ? vazio : `R$ ${fmtQuantidade(item.liquidez)}`}</td>
+        <td class="col-acao">
+          <button class="adicionar" data-adicionar="${escapar(item.ticker)}"${jaTem ? ' disabled title="Já está na sua carteira"' : ''}>${jaTem ? 'na carteira' : '+ carteira'}</button>
+        </td>
+      </tr>`;
+  }
+
+  function renderRastreador() {
+    if (!universo) return;
+    const f = filtros();
+    const { visiveis, resumo } = rastrearMercado(universo.ativos, estado.config, {
+      ...f,
+      limite: Number(f.limite) === 0 ? null : Number(f.limite),
+    });
+
+    el('#tabela-rastreador thead tr').innerHTML = cabecalhoRastreador();
+    el('#tabela-rastreador tbody').innerHTML = visiveis.length
+      ? visiveis.map(linhaRastreador).join('')
+      : `<tr class="vazia"><td colspan="${COLUNAS_RASTREADOR.length}">Nenhum papel passou nos filtros. Afrouxe a liquidez mínima ou desmarque “só os que estão abaixo do teto”.</td></tr>`;
+
+    const melhor = resumo.melhorMargem === null ? '—' : fmtPct(resumo.melhorMargem);
+    el('#r-contagem').innerHTML = `Mostrando <strong>${resumo.mostrados}</strong> de ${resumo.filtrados} papéis filtrados · ${resumo.comprar} abaixo do teto · melhor margem ${melhor} · universo de ${resumo.universo} (${resumo.acoes} ações + ${resumo.fiis} FIIs)`;
+  }
+
+  function descreverFonte() {
+    if (!universo) return '';
+    const quando = new Date(universo.atualizadoEm);
+    const idade = universo.idadeMinutos;
+    const quandoTexto = Number.isFinite(quando.getTime())
+      ? quando.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : 'agora';
+    return `Dados de ${quandoTexto}${idade > 0 ? ` (${idade} min atrás)` : ''}.`;
+  }
+
+  /**
+   * Traz o mercado inteiro pelo servidor local. Sem servidor não há como: a página
+   * publicada não consegue ler o Fundamentus por causa do CORS do navegador.
+   * @param {boolean} forcar ignora o cache do servidor
+   */
+  async function carregarUniverso(forcar = false) {
+    if (buscandoUniverso) return;
+    const local = await servidor();
+    if (!local.disponivel || !local.comUniverso) {
+      status(
+        local.disponivel
+          ? 'Este servidor local é de uma versão anterior, sem o rastreador. Pare e rode de novo: node tools/servidor.mjs'
+          : 'O rastreador precisa do servidor local (é ele que lê a fonte dos dados). No terminal, dentro da pasta do projeto: node tools/servidor.mjs — depois abra http://localhost:8765',
+        'alerta', [], '#r-status',
+      );
+      return;
+    }
+
+    buscandoUniverso = true;
+    const botao = el('#btn-rastrear-recarregar');
+    botao.disabled = true;
+    status(forcar ? 'Buscando a bolsa inteira na fonte…' : 'Carregando a bolsa inteira…', '', [], '#r-status');
+    try {
+      const resposta = await fetch(`/api/universo${forcar ? '?forcar=1' : ''}`, { headers: { Accept: 'application/json' } });
+      const corpo = await resposta.json().catch(() => null);
+      if (!resposta.ok || !corpo || !Array.isArray(corpo.ativos)) {
+        throw new Error(corpo?.erro || `o servidor respondeu HTTP ${resposta.status}`);
+      }
+      universo = corpo;
+      el('#universo-info').textContent = descreverFonte();
+      renderRastreador();
+      const detalhes = [...(corpo.erros || [])];
+      if (corpo.doCache) detalhes.push('Dados guardados no servidor; use “Recarregar” para buscar de novo na fonte.');
+      status(`${corpo.ativos.length} papéis calculados.`, corpo.erros?.length ? 'alerta' : 'ok', detalhes, '#r-status');
+    } catch (erro) {
+      status(`Não foi possível carregar a bolsa: ${erro.message}`, 'erro', [], '#r-status');
+    } finally {
+      buscandoUniverso = false;
+      botao.disabled = false;
+    }
+  }
+
+  function abrirRastreador(abrir) {
+    estado.config.rastreadorAberto = abrir;
+    el('#rastreador').hidden = !abrir;
+    salvar();
+    if (abrir && !universo) carregarUniverso(false);
+    else if (abrir) renderRastreador();
+  }
+
+  /** Leva um papel do rastreador para a carteira, já no modo dividendo. */
+  function adicionarDoRastreador(ticker) {
+    if (!universo || naCarteira(ticker)) return;
+    const item = universo.ativos.find((a) => a.ticker === ticker);
+    if (!item) return;
+    estado.ativos.unshift({
+      id: novoId(),
+      ticker,
+      modo: 'dividendo',
+      setor: item.segmento || (item.tipo === 'fii' ? 'FII' : ''),
+      cotacao: item.cotacao === null ? '' : fmt2.format(item.cotacao),
+      dpaInformado: item.dpa12m === null ? '' : fmt2.format(item.dpa12m),
+      dpa12mMercado: item.dpa12m,
+      fonteProventos: 'fundamentus',
+    });
+    render();
+    renderRastreador();
+    status(`${ticker} entrou na carteira com o provento de 12 meses já preenchido. Ajuste a premissa se quiser projetar outro dividendo.`, 'ok');
+  }
+
+  function exportarRastreadorCsv() {
+    if (!universo) return;
+    const f = filtros();
+    const { visiveis } = rastrearMercado(universo.ativos, estado.config, { ...f, limite: null });
+    const dec = (n) => (n === null || n === undefined || !Number.isFinite(n) ? '' : String(n).replace('.', ','));
+    const cabecalho = ['Ticker', 'Tipo', 'Segmento', 'Cotacao', 'DY 12m (%)', 'Provento 12m', 'Preco-teto', 'Preco de compra', 'Margem (%)', 'Comprar', 'P/VP', 'Liquidez'];
+    const corpo = visiveis.map(({ item, metricas: m }) => [
+      item.ticker, item.tipo === 'fii' ? 'FII' : 'Acao', item.segmento || '',
+      dec(m.cotacao), dec(item.dy), dec(m.dpa), dec(m.precoTeto), dec(m.precoAlvo),
+      dec(m.margem === null ? null : m.margem * 100),
+      { sim: 'SIM', nao: 'NAO', incompleto: 'FALTA DADO' }[m.veredito],
+      dec(item.pvp), dec(item.liquidez),
+    ]);
+    const csv = [cabecalho, ...corpo].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    baixar(`rastreador-b3-${hoje()}.csv`, `\ufeff${csv}`, 'text/csv;charset=utf-8');
+    status(`${corpo.length} papéis exportados.`, 'ok', [], '#r-status');
+  }
+
+  function ligarEventosDoRastreador() {
+    el('#btn-rastrear').addEventListener('click', () => abrirRastreador(el('#rastreador').hidden));
+    el('#btn-rastrear-fechar').addEventListener('click', () => abrirRastreador(false));
+    el('#btn-rastrear-recarregar').addEventListener('click', () => carregarUniverso(true));
+    el('#btn-rastrear-csv').addEventListener('click', exportarRastreadorCsv);
+
+    el('#tabela-rastreador thead').addEventListener('click', (evento) => {
+      const th = evento.target.closest('[data-ordenar]');
+      if (!th) return;
+      const f = filtros();
+      salvarFiltro(f.ordenarPor === th.dataset.ordenar
+        ? { decrescente: !f.decrescente }
+        : { ordenarPor: th.dataset.ordenar, decrescente: true });
+      renderRastreador();
+    });
+
+    el('#tabela-rastreador tbody').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('[data-adicionar]');
+      if (botao) adicionarDoRastreador(botao.dataset.adicionar);
+    });
+
+    el('#r-status').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('.ver-detalhes');
+      if (!botao) return;
+      const lista = el('#r-status .detalhes');
+      const aberto = !lista.hidden;
+      lista.hidden = aberto;
+      botao.setAttribute('aria-expanded', String(!aberto));
+    });
+
+    const campos = [
+      ['#r-tipo', 'change', (e) => ({ tipo: e.target.value })],
+      ['#r-limite', 'change', (e) => ({ limite: Number(e.target.value) })],
+      ['#r-liquidez', 'input', (e) => ({ liquidezMinima: e.target.value })],
+      ['#r-busca', 'input', (e) => ({ busca: e.target.value })],
+      ['#r-so-sim', 'change', (e) => ({ somenteSim: e.target.checked })],
+      ['#r-sem-provento', 'change', (e) => ({ ocultarSemProvento: !e.target.checked })],
+    ];
+    campos.forEach(([sel, evt, ler]) => el(sel).addEventListener(evt, (evento) => {
+      salvarFiltro(ler(evento));
+      renderRastreador();
+    }));
+  }
+
+  function sincronizarRastreador() {
+    const f = filtros();
+    el('#r-tipo').value = f.tipo;
+    el('#r-limite').value = String(f.limite);
+    el('#r-liquidez').value = f.liquidezMinima ?? '';
+    el('#r-busca').value = f.busca ?? '';
+    el('#r-so-sim').checked = !!f.somenteSim;
+    el('#r-sem-provento').checked = !f.ocultarSemProvento;
+    el('#rastreador').hidden = estado.config.rastreadorAberto === false;
   }
 
   // ------------------------------------------------------------------ import/export
@@ -643,7 +883,10 @@
   }
 
   sincronizarConfig();
+  sincronizarRastreador();
   ligarEventos();
+  ligarEventosDoRastreador();
   render();
   atualizarAoAbrir();
+  if (estado.config.rastreadorAberto !== false) carregarUniverso(false);
 })();

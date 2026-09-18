@@ -36,6 +36,25 @@ brapi.listen(0);
 await once(brapi, 'listening');
 const BRAPI_BASE = `http://127.0.0.1:${brapi.address().port}/api/quote/`;
 
+// Fundamentus falso, em ISO-8859-1 como a página real
+const paginaFalsa = (cabecalho, linhas) => `<table><tr>${cabecalho.map((c) => `<th>${c}</th>`).join('')}</tr>`
+  + `${linhas.map((l) => `<tr>${l.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+const FUNDAMENTUS_ACOES = paginaFalsa(['Papel', 'Cotação', 'P/VP', 'Div.Yield', 'Liq. Corr.', 'Liq.2meses'], [
+  ['BBAS3', '23,10', '0,78', '9,45%', '1,25', '1.250.300.000'],
+  ['CARO3', '100,00', '3,00', '2,00%', '1,10', '80.000.000'],
+  ['NANO3', '2,00', '0,40', '8,00%', '0,90', '15.000'],
+]);
+const FUNDAMENTUS_FIIS = paginaFalsa(['Papel', 'Segmento', 'Cotação', 'FFO Yield', 'Dividend Yield', 'P/VP', 'Liquidez'], [
+  ['XPLG11', 'Logística', '95,50', '9,50%', '9,18%', '0,92', '12.000.000'],
+]);
+const fundamentus = createServer((pedido, resposta) => {
+  resposta.writeHead(200, { 'Content-Type': 'text/html; charset=ISO-8859-1' });
+  resposta.end(Buffer.from(pedido.url.includes('fii') ? FUNDAMENTUS_FIIS : FUNDAMENTUS_ACOES, 'latin1'));
+});
+fundamentus.listen(0);
+await once(fundamentus, 'listening');
+const FUNDAMENTUS_BASE = `http://127.0.0.1:${fundamentus.address().port}`;
+
 // brapi v2 falsa: quote responde, dividendos são de plano pago
 const brapiV2 = createServer((pedido, resposta) => {
   const url = new URL(pedido.url, 'http://l');
@@ -165,6 +184,58 @@ try {
     );
   });
 
+console.log('rastrear.mjs');
+
+  await teste('lista o mercado inteiro ordenado pela maior margem', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/rastrear.mjs'], {
+      cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE },
+    });
+    assert.match(stdout, /Universo: 4 papéis \(3 ações \+ 1 FIIs\)/);
+    // BBAS3: 2,18 / 6% = 36,38 sobre cotação de 23,10 -> margem de 57,5%
+    assert.match(stdout, /BBAS3.*36,38.*57,5%.*SIM/);
+    assert.match(stdout, /CARO3.*-66,7%.*não/);
+    const ordem = ['BBAS3', 'XPLG11', 'NANO3', 'CARO3'].map((t) => stdout.indexOf(t));
+    assert.deepEqual(ordem, [...ordem].sort((a, b) => a - b), 'maior margem primeiro');
+  });
+
+  await teste('yield aceitável na flag muda o teto', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/rastrear.mjs', '--yield', '9'], {
+      cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE },
+    });
+    assert.match(stdout, /Yield aceitável: 9%/);
+    assert.match(stdout, /BBAS3.*24,26/); // 2,18 / 9%
+  });
+
+  await teste('filtra por tipo e por liquidez', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/rastrear.mjs', '--tipo', 'fii'], {
+      cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE },
+    });
+    assert.match(stdout, /XPLG11/);
+    assert.ok(!stdout.includes('BBAS3'), 'só FIIs');
+
+    const { stdout: comCorte } = await executar(process.execPath, ['tools/rastrear.mjs', '--liquidez', '1 mi'], {
+      cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE },
+    });
+    assert.ok(!comCorte.includes('NANO3'), 'liquidez baixa sai');
+  });
+
+  await teste('--csv imprime para colar na planilha', async () => {
+    const { stdout } = await executar(process.execPath, ['tools/rastrear.mjs', '--csv'], {
+      cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE },
+    });
+    assert.match(stdout, /^Ticker;Tipo;Cotacao;DY;Provento12m;PrecoTeto;Margem;Comprar/m);
+    assert.match(stdout, /^BBAS3;acao;23,10;9,45;2,18;36,38;57,5;sim$/m);
+  });
+
+  await teste('fonte fora do ar falha com mensagem clara', async () => {
+    await assert.rejects(
+      executar(process.execPath, ['tools/rastrear.mjs'], {
+        cwd: RAIZ, env: { ...process.env, FUNDAMENTUS_BASE: 'http://127.0.0.1:1' },
+      }),
+      (erro) => /Nenhum ativo veio da fonte/.test(erro.stderr),
+    );
+  });
+
   console.log('inspecionar-bolsai.mjs');
 
   await teste('inspeciona um ticker com a chave do ambiente (sem flag)', async () => {
@@ -197,6 +268,7 @@ try {
   brapi.close();
   brapiV2.close();
   bolsai.close();
+  fundamentus.close();
 }
 
 console.log(falhas ? `\n${falhas} teste(s) de CLI falharam` : '\nTodos os testes de CLI passaram');

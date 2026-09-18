@@ -111,7 +111,7 @@
    */
   async function detectarServidor(opcoes) {
     const { fetchImpl, base = '' } = opcoes || {};
-    const ausente = { disponivel: false, comToken: false, comBolsai: false };
+    const ausente = { disponivel: false, comToken: false, comBolsai: false, comUniverso: false };
     const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     if (!http) return ausente;
     // Em file:// não há servidor para consultar.
@@ -125,6 +125,8 @@
         disponivel: true,
         comToken: !!corpo.comToken,
         comBolsai: !!corpo.comBolsai,
+        // Servidores antigos não têm o rastreador: a tela precisa saber antes de pedir.
+        comUniverso: !!corpo.comUniverso,
         versao: corpo.versao || null,
       };
     } catch {

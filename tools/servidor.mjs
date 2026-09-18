@@ -20,7 +20,8 @@
  * BRAPI_BASE troca a URL da API (usado pelos testes).
  */
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -29,6 +30,7 @@ const { buscarCotacoes, normalizar, buscarTickersParecidos, ASSINATURA_SERVIDOR,
 const { buscarFundamentos, BASE: BASE_BOLSAI } = require('../assets/bolsai.js');
 const { buscarCotacoes: buscarCotacoesV2, buscarProventos12m, BASE_V2 } = require('../assets/brapi-v2.js');
 const { buscarResumo: buscarResumoYahoo, BASE_YAHOO } = require('../assets/yahoo.js');
+const { buscarTudo: buscarUniverso, BASE_FUNDAMENTUS } = require('../assets/fundamentus.js');
 
 /**
  * Lê a versão do código servido direto do .git, sem depender do git instalado.
@@ -79,6 +81,9 @@ function lerArgumentos(argv) {
     baseBolsai: process.env.BOLSAI_BASE || BASE_BOLSAI,
     baseV2: process.env.BRAPI_V2_BASE || BASE_V2,
     baseYahoo: process.env.YAHOO_BASE || BASE_YAHOO,
+    baseFundamentus: process.env.FUNDAMENTUS_BASE || BASE_FUNDAMENTUS,
+    // Horas de validade do universo em cache: dado com atraso, triagem é mensal.
+    horasDeCache: Number(process.env.UNIVERSO_HORAS || 6),
     // YAHOO=0 desliga a fonte gratuita de proventos.
     usarYahoo: process.env.YAHOO !== '0',
     // BRAPI_V2=0 desliga a v2 e usa apenas a v1.
@@ -86,7 +91,65 @@ function lerArgumentos(argv) {
   };
 }
 
-const { porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2, baseYahoo, usarYahoo } = lerArgumentos(process.argv);
+const {
+  porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2, baseYahoo, usarYahoo,
+  baseFundamentus, horasDeCache,
+} = lerArgumentos(process.argv);
+
+// O universo é o mercado inteiro: guardar em disco evita rebaixar o Fundamentus a
+// cada abertura do app e deixa o rastreador instantâneo depois da primeira vez.
+const ARQUIVO_UNIVERSO = join(process.env.UNIVERSO_CACHE_DIR || tmpdir(), 'preco-teto-universo.json');
+let universoEmMemoria = null;
+
+async function lerCacheDoUniverso() {
+  if (universoEmMemoria) return universoEmMemoria;
+  try {
+    const bruto = JSON.parse(await readFile(ARQUIVO_UNIVERSO, 'utf8'));
+    if (Array.isArray(bruto?.ativos) && bruto.atualizadoEm) {
+      universoEmMemoria = bruto;
+      return bruto;
+    }
+  } catch {
+    // Sem cache ainda, ou ilegível: busca do zero.
+  }
+  return null;
+}
+
+async function gravarCacheDoUniverso(dados) {
+  universoEmMemoria = dados;
+  try {
+    await mkdir(join(ARQUIVO_UNIVERSO, '..'), { recursive: true });
+    await writeFile(ARQUIVO_UNIVERSO, JSON.stringify(dados));
+  } catch (erro) {
+    console.warn(`[universo] não foi possível gravar o cache: ${erro.message}`);
+  }
+}
+
+/**
+ * Mercado inteiro (ações + FIIs) com cotação e dividend yield, do Fundamentus.
+ * @param {boolean} forcar ignora o cache
+ */
+async function obterUniverso(forcar) {
+  const cache = await lerCacheDoUniverso();
+  const idadeMs = cache ? Date.now() - Date.parse(cache.atualizadoEm) : Infinity;
+  if (!forcar && cache && idadeMs < horasDeCache * 3600 * 1000) {
+    return { ...cache, doCache: true, idadeMinutos: Math.round(idadeMs / 60000) };
+  }
+
+  const { ativos, erros } = await buscarUniverso({ base: baseFundamentus });
+  if (!ativos.length) {
+    if (cache) {
+      // Fonte fora do ar: melhor dado velho, avisando, do que tela vazia.
+      return { ...cache, doCache: true, idadeMinutos: Math.round(idadeMs / 60000), erros };
+    }
+    throw new Error(erros.join(' ') || 'O Fundamentus não devolveu nenhum ativo.');
+  }
+
+  const dados = { ativos, erros, atualizadoEm: new Date().toISOString() };
+  await gravarCacheDoUniverso(dados);
+  console.log(`[universo] ${ativos.length} ativos (${ativos.filter((a) => a.tipo === 'fii').length} FIIs)`);
+  return { ...dados, doCache: false, idadeMinutos: 0 };
+}
 
 /**
  * Proventos pelo Yahoo: grátis, sem token e sem cadastro. É o degrau final da
@@ -250,9 +313,20 @@ const servidor = createServer(async (pedido, resposta) => {
       servico: ASSINATURA_SERVIDOR,
       comToken: !!token,
       comBolsai: !!chaveBolsai,
+      comUniverso: true,
       apiBrapi: usarV2 ? 'v2 (com queda para v1)' : 'v1',
       versao,
     });
+  }
+
+  if (url.pathname === '/api/universo') {
+    try {
+      const forcar = ['1', 'true', 'sim'].includes(url.searchParams.get('forcar') || '');
+      return json(resposta, 200, await obterUniverso(forcar));
+    } catch (erro) {
+      console.error('[universo] falha:', erro.message);
+      return json(resposta, 502, { erro: `Não foi possível carregar o universo: ${erro.message}` });
+    }
   }
 
   if (url.pathname === '/api/cotacoes') {

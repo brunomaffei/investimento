@@ -11,11 +11,12 @@
 <body>
 <header class="topo">
   <div>
-    <h1>Ativos acompanhados: preço-teto e margem de segurança</h1>
-    <p class="sub">Lucro projetado, payout e yield são <strong>premissas suas</strong>. O app faz a conta e diz se o preço de hoje cabe no seu teto.</p>
+    <h1>Preço-teto e margem de segurança na B3</h1>
+    <p class="sub">O rastreador aplica o método Bazin em <strong>todas as ações e FIIs</strong> de uma vez, com o provento já pago. Na carteira embaixo você refina com <strong>suas premissas</strong> de lucro, payout e yield.</p>
   </div>
   <div class="acoes">
-    <button id="btn-adicionar" class="primario">+ Ativo</button>
+    <button id="btn-rastrear" class="primario">🔎 Rastrear a bolsa</button>
+    <button id="btn-adicionar">+ Ativo</button>
     <button id="btn-cotacoes">↻ Atualizar cotações</button>
     <button id="btn-diagnostico">🔌 Testar conexão</button>
     <button id="btn-csv">⬇ CSV</button>
@@ -52,9 +53,61 @@
 </section>
 
 <section id="resumo" class="resumo"></section>
+<section id="rastreador" class="rastreador" hidden>
+  <header class="rastreador-topo">
+    <div>
+      <h2>A bolsa inteira, já calculada</h2>
+      <p class="sub">Todas as ações e todos os FIIs da B3 com o provento pago nos últimos 12 meses. O preço-teto sai sem você digitar nenhum ticker. <span id="universo-info" class="fonte"></span></p>
+    </div>
+    <div class="acoes">
+      <button id="btn-rastrear-recarregar" title="Busca os dados de novo na fonte, ignorando o que está guardado">↻ Recarregar</button>
+      <button id="btn-rastrear-csv">⬇ CSV</button>
+      <button id="btn-rastrear-fechar">Fechar</button>
+    </div>
+  </header>
+
+  <div class="filtros">
+    <label>Mostrar
+      <select id="r-tipo">
+        <option value="todos">Ações e FIIs</option>
+        <option value="acao">Só ações</option>
+        <option value="fii">Só FIIs</option>
+      </select>
+    </label>
+    <label>Liquidez mínima (R$/dia)
+      <input id="r-liquidez" inputmode="decimal" placeholder="ex.: 1 mi">
+    </label>
+    <label>Buscar
+      <input id="r-busca" placeholder="ticker ou segmento">
+    </label>
+    <label>Linhas
+      <select id="r-limite">
+        <option value="30">30</option>
+        <option value="60">60</option>
+        <option value="150">150</option>
+        <option value="0">todas</option>
+      </select>
+    </label>
+    <span class="check"><input type="checkbox" id="r-so-sim"> só os que estão abaixo do teto</span>
+    <span class="check"><input type="checkbox" id="r-sem-provento"> incluir quem não pagou provento</span>
+  </div>
+
+  <p id="r-status" class="status"></p>
+
+  <div class="tabela-wrap">
+    <table id="tabela-rastreador">
+      <thead><tr></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="contagem" id="r-contagem"></p>
+  <p class="aviso-fonte">Cotação e dividend yield vêm do Fundamentus, com atraso e sem custo. O provento de 12 meses é o que a empresa <strong>já pagou</strong> — não é projeção. Use como triagem: o papel que aparecer no topo ainda merece leitura antes da compra.</p>
+</section>
+
 <p id="status" class="status"></p>
 <section id="diagnostico" class="diagnostico" hidden></section>
 
+<h2 class="titulo-secao">Sua carteira acompanhada</h2>
 <div class="tabela-wrap">
   <table id="tabela">
     <thead><tr></tr></thead>
@@ -78,6 +131,7 @@
 
 <script src="assets/calc.js"></script>
 <script src="assets/quotes.js"></script>
+<script src="assets/rastreador.js"></script>
 <script src="assets/seed.js"></script>
 <script src="assets/app.js"></script>
 </body>

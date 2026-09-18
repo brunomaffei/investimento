@@ -59,6 +59,8 @@ const { porta, processo: servidor, log } = await subirServidor(['--token', 'TOKE
   BRAPI_BASE: `http://127.0.0.1:${brapi.address().port}/api/quote/`,
   BOLSAI_BASE: `http://127.0.0.1:${bolsai.address().port}/api/v1`,
   BOLSAI_KEY: CHAVE_BOLSAI,
+  // Sem rastreador nestes testes: endereço morto faz a tela avisar na hora.
+  FUNDAMENTUS_BASE: 'http://127.0.0.1:1',
 });
 
 const browser = await chromium.launch({ executablePath: acharChromium() });

@@ -17,6 +17,20 @@
     ordemDecrescente: true,
     somenteComprar: false,
     busca: '',
+    // O rastreador abre junto com a página: a ideia é ver o mercado inteiro já
+    // calculado, sem precisar pedir. Fecha com um clique e a escolha fica salva.
+    rastreadorAberto: true,
+    rastreador: {
+      tipo: 'todos',
+      liquidezMinima: '',
+      busca: '',
+      limite: 60,
+      somenteSim: false,
+      // Papel que não pagou provento não tem preço-teto pelo método: fica fora por padrão.
+      ocultarSemProvento: true,
+      ordenarPor: 'margem',
+      decrescente: true,
+    },
   };
 
   // Tickers apenas como ponto de partida — nenhuma premissa vem preenchida, porque
