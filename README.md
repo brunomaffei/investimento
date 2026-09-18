@@ -3,9 +3,11 @@
 Ferramenta de uso próprio para responder, em poucos minutos por mês, uma pergunta só:
 **o preço de hoje está abaixo do preço máximo que eu aceito pagar por esse ativo?**
 
-A resposta vem em duas camadas: o **rastreador** faz a conta para a bolsa inteira de
-uma vez (todas as ações e todos os FIIs, sem você digitar ticker) e a **carteira**
-refina os poucos ativos que você acompanha com as suas premissas de lucro e payout.
+A resposta vem em três camadas: o **rastreador** faz a conta para a bolsa inteira de
+uma vez (todas as ações e todos os FIIs, sem você digitar ticker), a **minha carteira**
+mostra o que você tem de verdade — quanto vale, quanto paga por mês e como fica se
+comprar mais — e a tabela de **premissas** refina cada ativo com o seu lucro projetado,
+payout e yield.
 
 Duas formas de rodar, sem build e sem dependência:
 
@@ -170,6 +172,62 @@ Escolha por ativo, na coluna **Base**:
   Com 20%, um ativo de teto R$ 110 só recebe **SIM** abaixo de R$ 91,67
   (o app mostra esse "pagar até" embaixo do preço-teto).
 
+## Minha carteira: quanto eu tenho e quanto isso me paga
+
+Dois campos por ativo — **quantidade** e **preço médio** — e o resto sai sozinho:
+
+| Número | Como é calculado |
+| --- | --- |
+| Valor hoje | quantidade × cotação |
+| Investido | quantidade × preço médio |
+| Ganho ou perda | valor hoje − investido (e o mesmo em %) |
+| Renda média por mês | (quantidade × provento anual) ÷ 12 |
+| Yield sobre o custo | provento anual ÷ preço médio — o yield que a **sua compra** travou |
+
+O provento usado é o mesmo DPA da tabela de premissas, então carteira e preço-teto
+nunca contam histórias diferentes.
+
+Duas honestidades embutidas:
+
+- **Renda mensal é média.** Ação paga em datas irregulares; FII costuma pagar todo
+  mês. O app divide o provento anual por 12 e diz isso na tela.
+- **Quem não informou preço médio fica fora do ganho/perda e do yield sobre o custo**,
+  mas continua no valor de hoje e na renda. Misturar os dois grupos inflaria os dois
+  números. A linha embaixo dos cartões diz sobre quantos ativos cada total foi
+  calculado — e quantos estão sem cotação, sem preço médio ou sem provento.
+
+### Simular uma compra
+
+O botão **🧮 Simular compra** abre a coluna *Simular ±*. O número digitado é **somado**
+à posição (não substitui), a compra é feita ao preço de hoje e o preço médio novo sai
+da média ponderada. O painel mostra o antes → depois:
+
+```
+Custo da compra   R$ 6.930,00
+Renda por mês     R$ 135,14  →  R$ 189,64
+Valor da carteira R$ 18.785,00 → R$ 25.715,00
+Yield s/ custo    9,54% → 9,51%
+```
+
+Número negativo simula venda. Nada disso grava na posição real.
+
+### Gráficos
+
+Quatro, todos em SVG escrito à mão — sem biblioteca, sem CDN, sem build:
+
+1. **Onde está o seu dinheiro** — rosca da composição por ativo. Concentração é o
+   risco que não aparece em nenhuma outra tela.
+2. **Quanto cada ativo paga por mês** — barras da renda, com a parte simulada
+   empilhada em outra cor quando a simulação está ligada.
+3. **Patrimônio projetado** — área com duas camadas: o que saiu do seu bolso e o que
+   veio de provento reinvestido.
+4. **Renda mensal projetada** — a linha que responde "quanto eu receberia por mês",
+   com uma marca na renda de hoje.
+
+Os dois últimos usam aporte mensal, prazo, crescimento do dividendo e reinvestimento,
+todos configuráveis ali mesmo. **É projeção, não promessa**: supõe yield constante,
+preço parado, nada vendido, sem imposto e sem corretagem — e a tela diz isso.
+
 ## Rotina mensal sugerida
 
 1. `npm start`. O rastreador já abre com a bolsa inteira ordenada pela maior margem.
@@ -180,7 +238,9 @@ Escolha por ativo, na coluna **Base**:
 4. Confira o payout derivado (`12m: …`) dos ativos que divulgaram balanço e digite o
    seu quando discordar — é aqui que a sua projeção substitui o provento já pago.
 5. Ordene pela coluna **Margem de seg.** e marque *mostrar só os SIM*.
-6. Exporte o **CSV** se quiser guardar o histórico da decisão daquele mês.
+6. Em **Minha carteira**, simule a compra do mês (*Simular ±*) e veja quanto a renda
+   mensal sobe antes de mandar a ordem para a corretora.
+7. Exporte o **CSV** se quiser guardar o histórico da decisão daquele mês.
 
 ## Cotação automática
 
@@ -420,8 +480,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 255 testes de cálculo, cotação, rastreador, servidor e CLI (node puro)
-npm run test:ui   # 101 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 311 testes: cálculo, posição, projeção, gráficos, cotação, servidor e CLI
+npm run test:ui   # 167 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
@@ -448,6 +508,8 @@ assets/yahoo.js               proventos e preço pelo Yahoo (grátis, sem cadast
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
 assets/fundamentus.js         universo completo da B3 (cotação e DY de ações e FIIs)
 assets/rastreador.js          aplica o preço-teto ao mercado inteiro, com filtros e ordem
+assets/projecao.js            bola de neve: aporte, reinvestimento e renda futura (testado)
+assets/graficos.js            rosca, barras, área e linha em SVG puro, devolvidos como texto
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido
 tools/testar-ticker.mjs       investiga um ticker em todas as rotas da brapi

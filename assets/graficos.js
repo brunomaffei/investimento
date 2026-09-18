@@ -47,6 +47,20 @@
 
   const abrirSvg = (largura, altura, titulo) => `<svg viewBox="0 0 ${arredondar(largura)} ${arredondar(altura)}" width="100%" height="${arredondar(altura)}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapar(titulo)}">`;
 
+  /** Marcas do eixo X espaçadas pelo que cabe na largura disponível. */
+  function marcasDoEixo(pontos, larguraUtil) {
+    const cabem = Math.max(2, Math.floor(larguraUtil / 64));
+    const passo = Math.max(1, Math.ceil(pontos.length / cabem));
+    const escolhidos = pontos.filter((_, i) => i % passo === 0);
+    const ultimo = pontos[pontos.length - 1];
+    if (escolhidos[escolhidos.length - 1] !== ultimo) {
+      // O último ano é o que interessa: se o passo não o pegou, troca o anterior.
+      if (escolhidos.length > 1 && pontos.length - 1 - pontos.indexOf(escolhidos[escolhidos.length - 1]) < passo / 2) escolhidos.pop();
+      escolhidos.push(ultimo);
+    }
+    return escolhidos;
+  }
+
   /**
    * Rosca de composição: quanto cada ativo pesa no total.
    * @param {{rotulo: string, valor: number}[]} fatias
@@ -68,11 +82,18 @@
     }
     const total = principais.reduce((s, f) => s + f.valor, 0);
 
-    const altura = Math.max(210, 34 + principais.length * 22);
-    const centroX = 110;
-    const centroY = altura / 2;
-    const raio = 78;
-    const espessura = 30;
+    // Em painel estreito (celular, ou duas colunas no desktop) a legenda ao lado da
+    // rosca colide com os valores. Abaixo de 520px ela vai para baixo do anel.
+    const estreito = largura < 520;
+    const raio = estreito ? 62 : 78;
+    const espessura = estreito ? 26 : 30;
+    const alturaAnel = raio * 2 + 30;
+    const alturaLegenda = principais.length * 21 + 8;
+    const altura = estreito
+      ? alturaAnel + alturaLegenda
+      : Math.max(alturaAnel, 26 + principais.length * 22);
+    const centroX = estreito ? largura / 2 : raio + 32;
+    const centroY = estreito ? alturaAnel / 2 : altura / 2;
     const circunferencia = 2 * Math.PI * raio;
 
     let acumulado = 0;
@@ -84,22 +105,23 @@
       const inicio = -circunferencia * acumulado;
       acumulado += fracao;
       const cor = fatia.cauda ? CINZA : PALETA[i % PALETA.length];
-      return `<circle cx="${centroX}" cy="${centroY}" r="${raio}" fill="none" stroke="${cor}" stroke-width="${espessura}"`
+      return `<circle cx="${arredondar(centroX)}" cy="${arredondar(centroY)}" r="${raio}" fill="none" stroke="${cor}" stroke-width="${espessura}"`
         + ` stroke-dasharray="${arredondar(arco)} ${arredondar(circunferencia - arco)}" stroke-dashoffset="${arredondar(inicio)}"`
-        + ` transform="rotate(-90 ${centroX} ${centroY})" data-valor="${arredondar(fatia.valor)}" data-fracao="${arredondar(fracao * 1000) / 1000}">`
+        + ` transform="rotate(-90 ${arredondar(centroX)} ${arredondar(centroY)})" data-valor="${arredondar(fatia.valor)}" data-fracao="${arredondar(fracao * 1000) / 1000}">`
         + `<title>${escapar(fatia.rotulo)}: ${fmtReais(fatia.valor)} (${fmtPct(fracao)})</title></circle>`;
     }).join('');
 
     const legenda = principais.map((fatia, i) => {
-      const y = 22 + i * 22;
+      const y = estreito ? alturaAnel + 14 + i * 21 : 20 + i * 22;
+      const xChave = estreito ? 6 : centroX + raio + 26;
       const cor = fatia.cauda ? CINZA : PALETA[i % PALETA.length];
-      return `<rect x="${centroX + raio + 34}" y="${y - 9}" width="11" height="11" rx="2" fill="${cor}"></rect>`
-        + `<text class="rotulo" x="${centroX + raio + 52}" y="${y}">${escapar(fatia.rotulo)}</text>`
-        + `<text class="valor" x="${arredondar(largura - 12)}" y="${y}" text-anchor="end">${fmtReais(fatia.valor)} · ${fmtPct(fatia.valor / total)}</text>`;
+      return `<rect x="${arredondar(xChave)}" y="${arredondar(y - 9)}" width="11" height="11" rx="2" fill="${cor}"></rect>`
+        + `<text class="rotulo" x="${arredondar(xChave + 18)}" y="${arredondar(y)}">${escapar(fatia.rotulo)}</text>`
+        + `<text class="valor" x="${arredondar(largura - 8)}" y="${arredondar(y)}" text-anchor="end">${fmtReais(fatia.valor)} · ${fmtPct(fatia.valor / total)}</text>`;
     }).join('');
 
-    const centro = `<text class="centro" x="${centroX}" y="${centroY - 2}" text-anchor="middle">${fmtReais(total)}</text>`
-      + `<text class="rotulo" x="${centroX}" y="${centroY + 16}" text-anchor="middle">total</text>`;
+    const centro = `<text class="centro" x="${arredondar(centroX)}" y="${arredondar(centroY - 2)}" text-anchor="middle">${fmtEixo(total)}</text>`
+      + `<text class="rotulo" x="${arredondar(centroX)}" y="${arredondar(centroY + 16)}" text-anchor="middle">total</text>`;
 
     return `${abrirSvg(largura, altura, titulo)}${aneis}${centro}${legenda}</svg>`;
   }
@@ -173,7 +195,9 @@
         + `<text class="valor" x="${margem.esquerda - 6}" y="${arredondar(y + 4)}" text-anchor="end">${fmtEixo(teto * f)}</text>`;
     }).join('');
 
-    const marcas = validos.filter((p, i) => i === 0 || i === validos.length - 1 || p.x % Math.max(1, Math.round(ultimoX / 5)) === 0)
+    // Quantas marcas cabem sem os rótulos se encostarem — no celular, "1 ano" e
+    // "2 anos" viravam uma palavra só.
+    const marcas = marcasDoEixo(validos, util.largura)
       .map((p) => `<text class="rotulo" x="${arredondar(escalaX(p.x))}" y="${arredondar(altura - 6)}" text-anchor="middle">${escapar(rotuloX(p.x))}</text>`)
       .join('');
 
@@ -213,7 +237,9 @@
     const hoje = referencia !== null && Number.isFinite(referencia)
       ? `<line class="referencia" x1="${margem.esquerda}" y1="${arredondar(escalaY(referencia))}" x2="${arredondar(largura - margem.direita)}" y2="${arredondar(escalaY(referencia))}" stroke-dasharray="4 4"></line>`
       : '';
-    const marcas = validos.filter((p, i) => i === 0 || i === validos.length - 1 || p.x % Math.max(1, Math.round(ultimoX / 5)) === 0)
+    // Quantas marcas cabem sem os rótulos se encostarem — no celular, "1 ano" e
+    // "2 anos" viravam uma palavra só.
+    const marcas = marcasDoEixo(validos, util.largura)
       .map((p) => `<text class="rotulo" x="${arredondar(escalaX(p.x))}" y="${arredondar(altura - 6)}" text-anchor="middle">${escapar(rotuloX(p.x))}</text>`)
       .join('');
 

@@ -86,6 +86,19 @@ teste('sem valor positivo não desenha nada', () => {
   assert.equal(rosca([{ rotulo: 'A', valor: 0 }], { largura: 600 }), '');
 });
 
+teste('em painel estreito a legenda vai para baixo do anel, sem colidir', () => {
+  const fatias = [{ rotulo: 'FIIXX11', valor: 8622 }, { rotulo: 'BBAS3', valor: 6168 }];
+  const estreito = rosca(fatias, { largura: 380 });
+  const largo = rosca(fatias, { largura: 700 });
+  const alturaDe = (svg) => Number(svg.match(/height="([\d.]+)"/)[1]);
+  assert.ok(alturaDe(estreito) > alturaDe(largo), 'o estreito cresce para caber a legenda embaixo');
+
+  const centroY = Number(estreito.match(/<circle[^>]*cy="([\d.]+)"/)[1]);
+  const raio = Number(estreito.match(/<circle[^>]*\sr="([\d.]+)"/)[1]);
+  const ys = [...estreito.matchAll(/<rect[^>]*y="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(ys.every((y) => y > centroY + raio - 12), `a legenda começa abaixo do anel: ${ys.join(', ')}`);
+});
+
 console.log('área empilhada e linha');
 teste('a área precisa de pelo menos dois pontos', () => {
   assert.equal(areaEmpilhada([{ x: 1, base: 10, topo: 1 }], { largura: 600 }), '');
@@ -111,6 +124,15 @@ teste('a linha de referência aparece quando informada', () => {
 teste('série toda zerada não quebra a escala', () => {
   const svg = linha([{ x: 1, y: 0 }, { x: 2, y: 0 }], { largura: 600 });
   assert.ok(!/NaN|Infinity/.test(svg));
+});
+
+teste('o eixo do tempo mostra menos marcas quando há menos espaço', () => {
+  const serie = Array.from({ length: 10 }, (_, i) => ({ x: i + 1, y: (i + 1) * 100 }));
+  const rotulos = (svg) => [...svg.matchAll(/<text class="rotulo"[^>]*>([^<]+)</g)].map((m) => m[1]);
+  const estreito = rotulos(linha(serie, { largura: 350 }));
+  const largo = rotulos(linha(serie, { largura: 900 }));
+  assert.ok(estreito.length < largo.length, `${estreito.length} marcas no estreito contra ${largo.length} no largo`);
+  assert.equal(estreito[estreito.length - 1], largo[largo.length - 1], 'o último ano aparece sempre');
 });
 
 console.log(falhas ? `\n${falhas} teste(s) de gráficos falharam` : '\nTodos os testes de gráficos passaram');
