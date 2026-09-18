@@ -8,8 +8,9 @@
     yieldPadrao: 6,
     margemMinima: 0,
     token: '',
-    // Fundamentos (LPA e dividendos) são de plano pago na brapi; desligado por padrão.
-    fundamentos: false,
+    // Buscar LPA e proventos junto: com o Yahoo como fonte gratuita, não há motivo
+    // para deixar desligado — é o que permite derivar o payout sem o usuário digitar.
+    fundamentos: true,
     // Busca cotações sozinho ao abrir, quando há servidor local ou token.
     autoAtualizar: true,
     ordenarPor: 'margem',

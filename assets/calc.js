@@ -19,6 +19,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  // Corte clássico do método Bazin. Vale quando ninguém informou yield: campo de
+  // configuração vazio não pode travar a carteira inteira — o usuário não tem como
+  // adivinhar que o "6" cinza do campo era só um exemplo.
+  const YIELD_PADRAO = 6;
+
   const MULTIPLICADORES = {
     k: 1e3, mil: 1e3,
     m: 1e6, mi: 1e6, mm: 1e6, milhao: 1e6, milhoes: 1e6,
@@ -87,7 +92,11 @@
     const margemMinima = parseNumero(cfg.margemMinima) || 0;
 
     const cotacao = positivo(parseNumero(ativo.cotacao));
-    const yieldAceitavel = positivo(parseNumero(ativo.yieldAceitavel)) ?? positivo(yieldPadrao);
+    const yieldAceitavel = positivo(parseNumero(ativo.yieldAceitavel))
+      ?? positivo(yieldPadrao)
+      ?? YIELD_PADRAO;
+    const yieldDoFallback = positivo(parseNumero(ativo.yieldAceitavel)) === null
+      && positivo(yieldPadrao) === null;
     const modo = ['dividendo', 'lpa'].includes(ativo.modo) ? ativo.modo : 'lucro';
 
     const lucro = parseNumero(ativo.lucroProjetado);
@@ -133,7 +142,7 @@
     let veredito = 'incompleto';
     const faltando = [];
     if (cotacao === null) faltando.push('cotação');
-    if (!yieldAceitavel) faltando.push('yield');
+
     if (modo === 'dividendo') {
       if (dpa === null) faltando.push('DPA');
     } else {
@@ -154,6 +163,7 @@
       modo,
       cotacao,
       yieldAceitavel,
+      yieldDoFallback,
       lpa,
       dpa,
       precoTeto,
@@ -193,5 +203,5 @@
     };
   }
 
-  return { parseNumero, avaliarAtivo, avaliarCarteira, MULTIPLICADORES };
+  return { parseNumero, avaliarAtivo, avaliarCarteira, MULTIPLICADORES, YIELD_PADRAO };
 });

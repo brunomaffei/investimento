@@ -74,13 +74,26 @@ try {
   await page.waitForSelector('#tabela tbody tr');
   const linha = (t) => page.locator(`#tabela tbody tr:has(input.ticker[value="${t}"])`);
 
-  // Sem marcar a caixa, fundamentos não são buscados (economiza requisições)
+  // Caixa DESMARCADA: fundamentos não são buscados (economiza requisições). Como ela
+  // vem marcada por padrão, o estado é montado explicitamente antes da primeira busca.
+  await page.evaluate(() => {
+    const estado = JSON.parse(localStorage.getItem('precoteto.v1'));
+    estado.config.fundamentos = false;
+    estado.ativos = estado.ativos.map(({ lpaInformado, dpaInformado, ...resto }) => resto);
+    localStorage.setItem('precoteto.v1', JSON.stringify(estado));
+  });
+  await page.reload();
+  await page.waitForSelector('#tabela tbody tr');
+  await page.waitForFunction(() => /atualizados|problema/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+  // Zera o contador só depois do recarregamento: a abertura anterior, com a caixa
+  // ainda marcada, legitimamente consultou a bolsai.
+  const consultasAposDesligar = chamadasBolsai.length;
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /atualizados/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
-  ok(chamadasBolsai.length === 0, 'caixa desmarcada: nenhuma requisição à bolsai');
+  ok(chamadasBolsai.length === consultasAposDesligar, 'caixa desmarcada: nenhuma requisição nova à bolsai');
   ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '', 'LPA segue vazio');
 
-  // Marcando a caixa, o LPA chega automático
+  // Marcando a caixa de volta, o LPA chega automático
   await page.check('#fundamentos');
   await page.click('#btn-cotacoes');
   await page.waitForFunction(() => /bolsai/i.test(document.querySelector('#status').textContent), null, { timeout: 20000 });

@@ -197,10 +197,13 @@
           </select>
         </td>
         <td data-rotulo="Cotação atual" class="num">${inputCelula(ativo, 'cotacao', 'placeholder="ex.: 30,50"')}${origem}</td>
-        <td data-rotulo="Lucro projetado" class="num">${p.lucro}</td>
-        <td data-rotulo="Qtd. ações/units" class="num">${p.qtd}</td>
+        ${celulasLucro}
         <td data-rotulo="Payout (%)" class="num">${p.payout}</td>
-        <td data-rotulo="Yield aceitável (%)" class="num">${inputCelula(ativo, 'yieldAceitavel', `placeholder="${fmt0.format(parseNumero(estado.config.yieldPadrao) || 6)}"`)}</td>
+        <td data-rotulo="Yield aceitável (%)" class="num">${inputCelula(ativo, 'yieldAceitavel', `placeholder="${fmt0.format(m.yieldAceitavel)}"`)}${
+          m.yieldDoFallback
+            ? '<span class="sub" title="Sem yield na linha e sem padrão na configuração: vale o corte clássico de 6% do método Bazin.">padrão 6%</span>'
+            : ''
+        }</td>
         <td data-rotulo="LPA" class="num">${p.lpa}</td>
         <td data-rotulo="DPA" class="num">${p.dpa}</td>
         <td data-rotulo="Preço-teto" class="num forte" data-saida="precoTeto">${celulaTeto(m)}</td>

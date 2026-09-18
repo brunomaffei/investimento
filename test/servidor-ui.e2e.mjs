@@ -83,7 +83,10 @@ try {
     'app avisa que passou a consultar um a um (plano gratuito recusa o lote)');
   ok((await page.locator('#tabela tbody tr input[data-campo="cotacao"]').count()) === 7, 'a lista inteira segue na tela');
   ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '5,50', 'LPA da raiz da resposta preenchido sem plano pago');
-  ok((await page.locator('#resumo .card.alerta strong').innerText()) === '6', 'faltam só os payouts (6 ativos)');
+  // Com a busca de fundamentos ligada por padrão, o provento vem do Yahoo e o payout
+  // é derivado dele: a carteira abre completa, sem nada para digitar.
+  ok((await page.locator('#resumo .card.alerta strong').innerText()) === '0',
+    'abrindo o app, nenhuma premissa fica faltando');
 
   // Um payout padrão fecha a conta de todas as linhas de uma vez
   await page.fill('#payout-padrao', '50');
@@ -112,7 +115,7 @@ try {
   const st = await page.locator('#status').innerText();
   ok(/via servidor local/.test(st), `status informa o caminho usado: "${st}"`);
   ok((await linha('BBAS3').locator('input[data-campo="cotacao"]').inputValue()) === '27,31', 'cotação chegou pelo servidor');
-  ok((await linha('ITSA4').locator('.sub').innerText()).includes('Finance'), 'setor preenchido');
+  ok((await linha('ITSA4').locator('.col-ticker .sub').innerText()).includes('Finance'), 'setor preenchido');
 
   // Com fundamentos marcados, o brapi falso recusa (403) e a cotação precisa sobreviver
   await page.check('#fundamentos');

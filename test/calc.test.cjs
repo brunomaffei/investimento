@@ -126,9 +126,10 @@ teste('a lista aponta campo por campo, conforme o modo', () => {
   assert.deepEqual(avaliarAtivo({ modo: 'lpa', cotacao: 10, lpaInformado: 3 }, cfg).faltando, ['payout']);
   assert.deepEqual(avaliarAtivo({ modo: 'dividendo', cotacao: 10 }, cfg).faltando, ['DPA']);
   assert.deepEqual(avaliarAtivo({ modo: 'dividendo', dpaInformado: 1 }, cfg).faltando, ['cotação']);
+  // Yield nunca entra em "faltando": sem informação, vale o padrão de 6% do Bazin.
   assert.deepEqual(
     avaliarAtivo({ modo: 'dividendo', cotacao: 10, dpaInformado: 1 }, { yieldPadrao: 0 }).faltando,
-    ['yield'],
+    [],
   );
 });
 teste('premissas completas com prejuízo apontam lucro positivo', () => {
@@ -232,6 +233,30 @@ teste('provento zerado ou negativo não vira payout', () => {
     const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 2, dpa12mMercado: dpa }, { yieldPadrao: 6 });
     assert.equal(m.payoutDeMercado, null);
     assert.deepEqual(m.faltando, ['payout']);
+  }
+});
+
+teste('campo de yield vazio não trava a carteira: vale 6% do Bazin', () => {
+  // Era o que o usuário via: config com o campo vazio e TODAS as linhas em "falta yield".
+  const ativo = { modo: 'lpa', cotacao: '23,10', lpaInformado: '1,62', dpa12mMercado: '1,13' };
+  const m = avaliarAtivo(ativo, { yieldPadrao: '', margemMinima: '' });
+  assert.equal(m.yieldAceitavel, 6);
+  assert.equal(m.yieldDoFallback, true, 'a linha precisa saber que caiu no padrão');
+  assert.deepEqual(m.faltando, [], 'nada pode ficar faltando por causa disso');
+  perto(m.precoTeto, 18.83, 0.01);
+});
+teste('yield informado vence o padrão e o fallback', () => {
+  const ativo = { modo: 'lpa', cotacao: 20, lpaInformado: 2, payout: 50 };
+  assert.equal(avaliarAtivo(ativo, {}).yieldAceitavel, 6, 'sem nada, 6%');
+  assert.equal(avaliarAtivo(ativo, { yieldPadrao: 9 }).yieldAceitavel, 9);
+  assert.equal(avaliarAtivo({ ...ativo, yieldAceitavel: 12 }, { yieldPadrao: 9 }).yieldAceitavel, 12);
+  assert.equal(avaliarAtivo({ ...ativo, yieldAceitavel: 12 }, { yieldPadrao: 9 }).yieldDoFallback, false);
+});
+teste('yield inválido ou zero cai no padrão em vez de gerar Infinity', () => {
+  for (const ruim of ['', '0', 'abc', -3]) {
+    const m = avaliarAtivo({ modo: 'lpa', cotacao: 20, lpaInformado: 2, payout: 50, yieldAceitavel: ruim }, {});
+    assert.equal(m.yieldAceitavel, 6, `yield ${JSON.stringify(ruim)} deveria cair no padrão`);
+    assert.ok(Number.isFinite(m.precoTeto));
   }
 });
 

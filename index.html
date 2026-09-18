@@ -28,21 +28,21 @@
 
 <section class="config">
   <label>Yield aceitável padrão (%)
-    <input id="yield-padrao" inputmode="decimal" placeholder="6">
-    <small>Usado quando a linha não tem yield próprio. 6% é o corte clássico do Bazin.</small>
+    <input id="yield-padrao" inputmode="decimal" placeholder="vazio = 6">
+    <small>Usado quando a linha não tem yield próprio. Deixando vazio, vale <strong>6%</strong>, o corte clássico do Bazin.</small>
   </label>
   <label>Payout padrão (%)
     <input id="payout-padrao" inputmode="decimal" placeholder="ex.: 50">
     <small>Usado nas linhas sem payout próprio, para a carteira já calcular. Continua sendo premissa sua.</small>
   </label>
   <label>Margem de segurança mínima (%)
-    <input id="margem-minima" inputmode="decimal" placeholder="0">
-    <small>Só marca SIM se o desconto for pelo menos isso. 0% = compra a qualquer preço abaixo do teto.</small>
+    <input id="margem-minima" inputmode="decimal" placeholder="vazio = 0">
+    <small>Só marca SIM se o desconto for pelo menos isso. Vazio ou 0% = compra a qualquer preço abaixo do teto.</small>
   </label>
   <label>Token brapi.dev (opcional)
     <input id="token" type="password" placeholder="cole aqui para cotação automática" autocomplete="off">
     <span class="check"><input type="checkbox" id="fundamentos"> buscar também LPA e dividendos</span>
-    <small>Token gratuito em brapi.dev/dashboard cobre a <strong>cotação</strong>. Para <strong>LPA e proventos automáticos</strong>, suba o servidor com <code>BOLSAI_KEY</code> (grátis em usebolsai.com) — sem ela, esses campos dependem de plano pago na brapi. O token digitado aqui é repassado ao servidor local quando ele não tem um.</small>
+    <small>Token gratuito em brapi.dev/dashboard cobre a <strong>cotação</strong>; o <strong>LPA</strong> vem junto na resposta. Os <strong>proventos</strong> saem do Yahoo, sem cadastro — é o que permite calcular o payout sozinho. O token digitado aqui é repassado ao servidor local quando ele não tem um.</small>
   </label>
   <label class="busca">Buscar
     <input id="busca" placeholder="ticker, nome ou setor">

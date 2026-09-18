@@ -56,6 +56,23 @@ ok(/PAYOUT|LPA/i.test(faltaBBAS), `o selo diz qual premissa falta: "${faltaBBAS}
 ok((await page.locator('#resumo .card.ok strong').innerText()) === '1', 'resumo: 1 dentro do teto');
 ok((await page.locator('#resumo .card.alerta strong').innerText()) === '6', 'resumo: 6 com premissas faltando');
 
+// Cabeçalho e corpo precisam ter o MESMO número de células, nos dois estados:
+// com alguma linha em "Lucro proj." (colunas extras visíveis) e sem nenhuma.
+const contarColunas = async () => page.evaluate(() => ({
+  cabecalho: document.querySelectorAll('#tabela thead th').length,
+  corpo: [...document.querySelectorAll('#tabela tbody tr')].map((tr) => tr.children.length),
+}));
+const comLucro = await contarColunas();
+ok(comLucro.corpo.every((n) => n === comLucro.cabecalho),
+  `com modo lucro: ${comLucro.cabecalho} colunas no cabeçalho, linhas com ${[...new Set(comLucro.corpo)].join('/')}`);
+
+await linha('EXEMPLO').locator('select[data-campo="modo"]').selectOption('lpa');
+const semLucro = await contarColunas();
+ok(semLucro.cabecalho === comLucro.cabecalho - 2, 'sem modo lucro, duas colunas sao escondidas');
+ok(semLucro.corpo.every((n) => n === semLucro.cabecalho),
+  `sem modo lucro: ${semLucro.cabecalho} colunas no cabeçalho, linhas com ${[...new Set(semLucro.corpo)].join('/')}`);
+await linha('EXEMPLO').locator('select[data-campo="modo"]').selectOption('lucro');
+
 // Editar payout recalcula a linha sem perder o foco do campo
 const payout = linha('EXEMPLO').locator('input[data-campo="payout"]');
 await payout.fill('50');
@@ -155,7 +172,7 @@ await page.waitForFunction(() => document.querySelector('#status').textContent.i
 ok((await linha('ITSA4').locator('input[data-campo="cotacao"]').inputValue()) === '31,50', 'cotação automática preenchida');
 ok((await linha('ITSA4').locator('input[data-campo="lpaInformado"]').inputValue()) === '4,00', 'LPA vindo da API preenchido');
 ok((await linha('BBAS3').locator('input[data-campo="lpaInformado"]').inputValue()) === '8,00', 'LPA digitado por mim NÃO foi sobrescrito');
-ok((await linha('ITSA4').locator('.sub').innerText()).includes('Utilities'), 'setor preenchido pela API');
+ok((await linha('ITSA4').locator('.col-ticker .sub').innerText()).includes('Utilities'), 'setor preenchido pela API');
 
 // Diagnóstico de conexão: rede bloqueada pelo navegador
 await page.fill('#token', 'meu-token-de-teste');

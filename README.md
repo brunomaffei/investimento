@@ -52,6 +52,17 @@ atualização sozinha — a tabela aparece com o preço de hoje, sem clique. A c
 **atualizar ao abrir** desliga esse comportamento, e a página publicada nunca tenta
 (sem servidor e sem token, não há por onde consultar).
 
+### Nada bloqueia a carteira por campo vazio
+
+**Yield aceitável** vazio na linha e na configuração vale **6%** — o corte clássico do
+Bazin. Antes, campo vazio deixava toda a tabela em "falta yield", e o placeholder 
+parecia um valor preenchido. A linha mostra  quando está usando esse
+fallback. **Margem mínima** vazia vale 0%.
+
+A caixa *buscar também LPA e dividendos* vem **marcada**: com o Yahoo como fonte
+gratuita de proventos, não há motivo para deixar desligada — é o que permite derivar
+o payout sem você digitar nada.
+
 ### Payout: derivado antes de ser premissa
 
 A ordem é: o payout **da linha** → o **payout padrão** da carteira → o **payout de
@@ -349,8 +360,8 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 194 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
-npm run test:ui   # 99 verificações de interface com Chromium (precisa de playwright-core)
+npm test          # 197 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm run test:ui   # 102 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
 Os testes de cálculo conferem as linhas da planilha que serviu de referência,
