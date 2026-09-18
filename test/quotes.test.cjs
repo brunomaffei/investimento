@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
-const { buscarCotacoes, normalizar, somarProventos12m, mensagemDeErro } = require('../assets/quotes.js');
+const {
+  buscarCotacoes, normalizar, somarProventos12m, mensagemDeErro, buscarTickersParecidos,
+} = require('../assets/quotes.js');
 
 let falhas = 0;
 async function teste(nome, fn) {
@@ -376,6 +378,39 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     ]);
     const { erros } = await buscarCotacoes(['XPTO9'], { token: 't', fundamentos: true, fetchImpl: http });
     assert.match(erros.XPTO9, /não encontrado/, 'o 404 diz mais do que o 403 do módulo pago');
+  });
+
+  console.log('sugestão de tickers parecidos');
+
+  const listaFalsa = () => ({ ok: true, json: async () => ({ stocks: [
+    { stock: 'CPLE3', name: 'Copel ON' }, { stock: 'CPLE5' }, { stock: 'CPLE6' }, { stock: 'CPLE11' },
+  ] }) });
+
+  await teste('busca por prefixo e exclui o código que falhou', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: listaFalsa }]);
+    const parecidos = await buscarTickersParecidos('CPLE', { token: 't', excluir: 'CPLE6', fetchImpl: http });
+    assert.deepEqual(parecidos, ['CPLE3', 'CPLE5', 'CPLE11']);
+    assert.ok(http.chamadas[0].includes('list?search=CPLE'), http.chamadas[0]);
+  });
+
+  await teste('termo curto demais não gasta requisição', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: listaFalsa }]);
+    assert.deepEqual(await buscarTickersParecidos('AB', { fetchImpl: http }), []);
+    assert.equal(http.chamadas.length, 0);
+  });
+
+  await teste('falha na busca devolve lista vazia, sem quebrar a atualização', async () => {
+    const erro = fetchFalso([{ quando: () => true, responde: () => ({ ok: false, status: 402 }) }]);
+    assert.deepEqual(await buscarTickersParecidos('CPLE', { fetchImpl: erro }), []);
+    const caiu = fetchFalso([{ quando: () => true, responde: () => { throw new Error('offline'); } }]);
+    assert.deepEqual(await buscarTickersParecidos('CPLE', { fetchImpl: caiu }), []);
+  });
+
+  await teste('descarta o que não tem cara de ticker da B3', async () => {
+    const http = fetchFalso([{ quando: () => true, responde: () => ({ ok: true, json: async () => ({ stocks: [
+      { stock: 'CPLE3' }, { stock: 'IBOV' }, { stock: '' }, { stock: 'CPLE3F' },
+    ] }) }) }]);
+    assert.deepEqual(await buscarTickersParecidos('CPLE', { fetchImpl: http }), ['CPLE3']);
   });
 
   console.log('normalizar e proventos');

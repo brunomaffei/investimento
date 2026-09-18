@@ -30,6 +30,13 @@ const brapiFalso = createServer((pedido, resposta) => {
     resposta.writeHead(403).end('{}');
     return;
   }
+  // Busca de tickers parecidos (/api/quote/list?search=…)
+  if (pedido.url.includes('/list?') || pedido.url.includes('/list&')) {
+    resposta.writeHead(200, { 'Content-Type': 'application/json' });
+    return resposta.end(JSON.stringify({ stocks: [
+      { stock: 'CPLE3', name: 'Copel ON' }, { stock: 'CPLE5' }, { stock: 'CPLE6' },
+    ] }));
+  }
   // Ticker que só existe na outra versão da API (caso real do CPLE6).
   if (tickers.includes('CPLE6')) {
     resposta.writeHead(404).end('{}');
@@ -264,6 +271,17 @@ try {
       assert.equal(corpo.dados.CPLE6, undefined);
       assert.match(corpo.erros.CPLE6, /não encontrado/i, 'mantém o motivo da fonte principal');
       assert.match(corpo.erros.CPLE6, /Na v2:/, 'e acrescenta o que a outra versão respondeu');
+    } finally {
+      v2Quebrada = false;
+    }
+  });
+
+  await teste('ticker inexistente ganha sugestão de códigos parecidos', async () => {
+    v2Quebrada = true;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
+      assert.match(corpo.erros.CPLE6, /A brapi tem: CPLE3, CPLE5\./, `veio: ${corpo.erros.CPLE6}`);
+      assert.ok(!/CPLE6\./.test(corpo.erros.CPLE6.split('A brapi tem:')[1] || ''), 'não sugere o próprio código que falhou');
     } finally {
       v2Quebrada = false;
     }

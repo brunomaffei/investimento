@@ -25,7 +25,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buscarCotacoes, normalizar, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
+const { buscarCotacoes, normalizar, buscarTickersParecidos, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
 const { buscarFundamentos, BASE: BASE_BOLSAI } = require('../assets/bolsai.js');
 const { buscarCotacoes: buscarCotacoesV2, buscarProventos12m, BASE_V2 } = require('../assets/brapi-v2.js');
 
@@ -130,6 +130,20 @@ async function recuperarFaltantes(resultado, tokenEmUso) {
       resultado.erros[ticker] = `${resultado.erros[ticker]} Na ${outra}: ${erro.message}`;
     }
   }
+
+  // Código que não existe em nenhuma versão costuma ser ticker extinto ou com
+  // grafia errada: sugerir os parecidos poupa o usuário de descobrir sozinho.
+  for (const ticker of Object.keys(resultado.erros)) {
+    const parecidos = await buscarTickersParecidos(ticker.replace(/\d+$/, ''), {
+      token: tokenEmUso,
+      base,
+      excluir: ticker,
+    });
+    if (parecidos.length) {
+      resultado.erros[ticker] = `${resultado.erros[ticker]} A brapi tem: ${parecidos.join(', ')}.`;
+    }
+  }
+
   return recuperados;
 }
 

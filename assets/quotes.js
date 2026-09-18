@@ -72,6 +72,39 @@
   const ASSINATURA_SERVIDOR = 'preco-teto';
 
   /**
+   * Procura tickers parecidos em /api/quote/list?search=…, para quando um código
+   * não existe mais (CPLE6 virou CPLE3 na migração da Copel ao Novo Mercado, por
+   * exemplo) e o usuário precisa saber qual usar no lugar.
+   * @param {string} termo Parte do código, normalmente as 4 primeiras letras.
+   * @param {{token?: string, fetchImpl?: Function, base?: string, limite?: number, excluir?: string}} [opcoes]
+   *   excluir: o código que falhou — sugerir ele de volta não ajudaria ninguém.
+   * @returns {Promise<string[]>} códigos encontrados.
+   */
+  async function buscarTickersParecidos(termo, opcoes = {}) {
+    const { token, fetchImpl, base = BASE, limite = 6, excluir } = opcoes;
+    const http = fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    const busca = String(termo || '').trim().toUpperCase();
+    if (!http || busca.length < 3) return [];
+
+    const params = new URLSearchParams({ search: busca });
+    if (token) params.set('token', token);
+    try {
+      const resposta = await http(`${base}list?${params}`, { headers: { Accept: 'application/json' } });
+      if (!resposta.ok) return [];
+      const corpo = await resposta.json();
+      // A lista vem em `stocks`; cada item traz o código em `stock`.
+      const itens = Array.isArray(corpo?.stocks) ? corpo.stocks
+        : Object.values(corpo || {}).find(Array.isArray) || [];
+      const codigos = itens
+        .map((i) => String(i?.stock || i?.symbol || i?.ticker || i || '').toUpperCase())
+        .filter((c) => TICKER_B3.test(c) && c !== busca && c !== String(excluir || '').toUpperCase());
+      return [...new Set(codigos)].slice(0, limite);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * O app pode ser servido por `tools/servidor.mjs`, que consulta a brapi do lado
    * do servidor (sem CORS) e guarda o token fora do navegador. Detecta se esse
    * servidor está atendendo nesta origem.
@@ -461,6 +494,7 @@
   return {
     buscarCotacoes, buscarPeloServidor, detectarServidor, diagnosticar, interpretar,
     somarProventos12m, normalizar, mensagemDeErro, motivoDeFalhaDeRede,
+    buscarTickersParecidos,
     LOTE, BASE, ASSINATURA_SERVIDOR, TICKER_B3, LIVRES,
   };
 });

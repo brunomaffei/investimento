@@ -177,8 +177,11 @@ Causas mais comuns, em ordem:
    BRAPI_TOKEN` e *respondeu sem dados*: fora de PETR4/MGLU3/VALE3/ITUB4 a brapi
    exige token. Basta deixar o token no campo da tela (o app repassa) ou reiniciar
    com `BRAPI_TOKEN=... npm start`.
-6. **Um ticker específico com 404.** Acontece de um papel existir numa versão da API
-   e não na outra. O servidor tenta a outra versão só para os tickers que falharam,
+6. **Um ticker específico com 404.** Pode ser código extinto (CPLE6 virou CPLE3 na
+   migração da Copel ao Novo Mercado, em 10/11/2025) ou papel que existe numa versão
+   da API e não na outra. Quando as duas falham, o app busca códigos parecidos em
+   `/api/quote/list?search=` e sugere na própria mensagem: *"A brapi tem: CPLE3,
+   CPLE5."* O servidor tenta a outra versão só para os tickers que falharam,
    avisa quando recupera (`CPLE6 não veio na v1 e foi buscado na v2`) e, quando as
    duas falham, o erro da linha cita as duas. Para investigar um ticker específico:
 
@@ -313,7 +316,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 168 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 173 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
