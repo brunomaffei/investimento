@@ -92,6 +92,38 @@ const { porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2 } = lerArgum
  * @param {boolean} fundamentosNaBrapi
  * @returns {Promise<{dados: Object, erros: Object, avisos: string[], fonte: string}>}
  */
+/**
+ * Tickers que a fonte principal não trouxe ganham uma tentativa na outra versão
+ * da API: acontece de um papel existir numa e não na outra (404 na v1, ok na v2).
+ * @returns {Promise<string[]>} os tickers recuperados.
+ */
+async function recuperarFaltantes(resultado, tokenEmUso) {
+  const faltantes = Object.keys(resultado.erros || {});
+  if (!faltantes.length) return [];
+  const recuperados = [];
+
+  for (const ticker of faltantes) {
+    try {
+      if (resultado.fonte === 'v1') {
+        const { dados } = await buscarCotacoesV2([ticker], { token: tokenEmUso, base: baseV2 });
+        const bruto = dados[ticker];
+        if (!bruto) continue;
+        resultado.dados[ticker] = normalizar({ ...bruto, symbol: ticker });
+      } else {
+        const alternativa = await buscarCotacoes([ticker], { token: tokenEmUso, fundamentos: false, base });
+        const info = alternativa.dados[ticker];
+        if (!info) continue;
+        resultado.dados[ticker] = info;
+      }
+      delete resultado.erros[ticker];
+      recuperados.push(ticker);
+    } catch {
+      // A outra versão também não tem: o erro original continua valendo.
+    }
+  }
+  return recuperados;
+}
+
 async function consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi) {
   // Quando se pede fundamentos pela brapi, vale a v1: a resposta comum dela traz
   // earningsPerShare na raiz (LPA sem plano pago). Trocar pela v2 aqui poderia
@@ -184,11 +216,21 @@ const servidor = createServer(async (pedido, resposta) => {
       const resultado = await consultarCotacoes(tickers, tokenEmUso, fundamentosNaBrapi);
       const avisos = [...(resultado.avisos || [])];
 
+      const recuperados = await recuperarFaltantes(resultado, tokenEmUso);
+      if (recuperados.length) {
+        const outra = resultado.fonte === 'v1' ? 'v2' : 'v1';
+        avisos.push(`${recuperados.join(', ')} não veio na ${resultado.fonte} e foi buscado na ${outra}.`);
+      }
+
       // Sem bolsai, os proventos vêm da própria brapi: /v2/stocks/dividends para
       // ações e /v2/fii/dividends para FII (a função cai de uma rota para a outra).
       if (fundamentos && !chaveBolsai && usarV2) {
         let comProventos = 0;
+        let planoSemProventos = false;
+        const falhas = [];
         for (const [ticker, info] of Object.entries(resultado.dados)) {
+          // Plano que recusa /dividends recusa para todos: não insistir ticker a ticker.
+          if (planoSemProventos) break;
           try {
             const proventos = await buscarProventos12m(ticker, { token: tokenEmUso, base: baseV2 });
             if (proventos.dpa12m !== null) {
@@ -197,9 +239,15 @@ const servidor = createServer(async (pedido, resposta) => {
               comProventos++;
             }
           } catch (erro) {
-            avisos.push(`Proventos de ${ticker} não vieram: ${erro.message}`);
+            if ([401, 402, 403].includes(erro.status)) {
+              planoSemProventos = true;
+              avisos.push('Proventos não vieram: seu plano na brapi não cobre a rota de dividendos. Com BOLSAI_KEY no servidor, eles vêm da bolsai.');
+            } else {
+              falhas.push(ticker);
+            }
           }
         }
+        if (falhas.length) avisos.push(`Proventos não vieram para ${falhas.length} ativo(s): ${falhas.join(', ')}.`);
         if (comProventos) console.log(`[dividendos] ${comProventos} ativo(s) com provento de 12 meses`);
       }
 

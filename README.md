@@ -177,7 +177,10 @@ Causas mais comuns, em ordem:
    BRAPI_TOKEN` e *respondeu sem dados*: fora de PETR4/MGLU3/VALE3/ITUB4 a brapi
    exige token. Basta deixar o token no campo da tela (o app repassa) ou reiniciar
    com `BRAPI_TOKEN=... npm start`.
-6. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
+6. **Um ticker específico com 404.** Acontece de um papel existir numa versão da API
+   e não na outra. O servidor tenta a outra versão só para os tickers que falharam e
+   avisa quando recupera (`CPLE6 não veio na v1 e foi buscado na v2`).
+7. **Ticker fora do padrão da B3.** Só `AAAA9`/`AAAA11` entram na consulta; a linha
    `EXEMPLO` é ignorada de propósito.
 
 Se o servidor local não trouxer nada, o app tenta a consulta direto do navegador
@@ -299,7 +302,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 159 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 163 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 

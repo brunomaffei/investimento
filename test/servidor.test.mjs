@@ -30,6 +30,11 @@ const brapiFalso = createServer((pedido, resposta) => {
     resposta.writeHead(403).end('{}');
     return;
   }
+  // Ticker que só existe na outra versão da API (caso real do CPLE6).
+  if (tickers.includes('CPLE6')) {
+    resposta.writeHead(404).end('{}');
+    return;
+  }
   // Como a brapi real: fora dos tickers livres, sem token é 401.
   const temToken = url.searchParams.has('token') || !!pedido.headers.authorization;
   if (!temToken && tickers.some((t) => !LIVRES.includes(t))) {
@@ -57,11 +62,16 @@ const { porta: portaSemToken, processo: servidorSemToken, log: logSemToken } =
 const pedidosV2 = [];
 let v2Quebrada = false;
 const hojeISO = new Date().toISOString();
+let dividendosNegados = false;
 const brapiV2Falsa = createServer((pedido, resposta) => {
   pedidosV2.push({ url: pedido.url, autorizacao: pedido.headers.authorization || null });
   if (v2Quebrada) return resposta.writeHead(500).end('{}');
   const url = new URL(pedido.url, 'http://local');
   const symbols = (url.searchParams.get('symbols') || '').split(',');
+  // Recusa antes de escrever o cabeçalho de sucesso.
+  if (dividendosNegados && url.pathname.endsWith('/dividends')) {
+    return resposta.writeHead(403).end('{}');
+  }
   resposta.writeHead(200, { 'Content-Type': 'application/json' });
 
   if (url.pathname.endsWith('/dividends')) {
@@ -146,8 +156,8 @@ try {
   });
 
   await teste('fundamentos recusados pelo plano não derrubam a cotação', async () => {
-    const corpo = await (await fetch(url('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
-    assert.equal(corpo.dados.CPLE6.preco, 42.5, 'a cotação precisa chegar mesmo com 403 nos módulos');
+    const corpo = await (await fetch(url('/api/cotacoes?tickers=SAPR11&fundamentos=1'))).json();
+    assert.equal(corpo.dados.SAPR11.preco, 42.5, 'a cotação precisa chegar mesmo com 403 nos módulos');
     assert.ok(corpo.avisos.some((a) => /plano/i.test(a)), `esperado aviso de plano, veio ${JSON.stringify(corpo.avisos)}`);
   });
 
@@ -204,9 +214,9 @@ try {
 
   await teste('pedido de fundamentos: cotação pela v1 (LPA na raiz), dividendos pela v2', async () => {
     pedidosV2.length = 0;
-    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=SAPR11&fundamentos=1'))).json();
     assert.equal(corpo.fonte, 'v1', 'a cotação precisa vir da v1 para não perder o earningsPerShare da raiz');
-    assert.equal(corpo.dados.CPLE6.preco, 42.5);
+    assert.equal(corpo.dados.SAPR11.preco, 42.5);
     assert.ok(!pedidosV2.some((p) => p.url.includes('/quote')), 'a v2 não é usada para cotação neste caso');
     assert.ok(pedidosV2.every((p) => p.url.includes('/dividends')), 'as chamadas à v2 aqui são só de dividendos');
   });
@@ -234,6 +244,41 @@ try {
     pedidosV2.length = 0;
     await fetch(urlV2('/api/cotacoes?tickers=BBAS3'));
     assert.ok(!pedidosV2.some((p) => p.url.includes('/dividends')), 'dividendos só quando pedidos');
+  });
+
+  console.log('servidor local — recuperação entre versões da API');
+
+  await teste('ticker com 404 na v1 é buscado na v2 e entra na lista', async () => {
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=BBAS3,CPLE6&fundamentos=1'))).json();
+    assert.equal(corpo.fonte, 'v1', 'a consulta principal é a v1 quando se pede fundamentos');
+    assert.equal(corpo.dados.CPLE6.preco, 77.7, 'CPLE6 precisa vir pela v2');
+    assert.equal(corpo.erros.CPLE6, undefined, 'e sair da lista de erros');
+    assert.ok(corpo.avisos.some((a) => /CPLE6 não veio na v1 e foi buscado na v2/.test(a)), JSON.stringify(corpo.avisos));
+  });
+
+  await teste('sem a outra versão configurada, o erro do ticker é preservado', async () => {
+    // Este servidor não tem BRAPI_V2_BASE: a tentativa de recuperação falha e o
+    // ticker precisa continuar reportado, em vez de sumir da lista de erros.
+    const corpo = await (await fetch(url('/api/cotacoes?tickers=CPLE6&fundamentos=1'))).json();
+    assert.equal(corpo.dados.CPLE6, undefined);
+    assert.match(corpo.erros.CPLE6, /não encontrado/i, 'o 404 do ticker é mais informativo que o 403 do módulo pago');
+  });
+
+  console.log('servidor local — plano sem direito a dividendos');
+
+  await teste('403 em /dividends gera um aviso só e para de tentar', async () => {
+    dividendosNegados = true;
+    pedidosV2.length = 0;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=BBAS3,ITSA4,TAEE11,VIVT3&fundamentos=1'))).json();
+      const sobrePlano = corpo.avisos.filter((a) => /não cobre a rota de dividendos/.test(a));
+      assert.equal(sobrePlano.length, 1, `esperava um aviso, veio ${JSON.stringify(corpo.avisos)}`);
+      const consultasDeDividendos = pedidosV2.filter((p) => p.url.includes('/dividends'));
+      assert.equal(consultasDeDividendos.length, 1, 'após o primeiro 403, não se insiste nos demais');
+      assert.equal(Object.keys(corpo.dados).length, 4, 'as cotações continuam chegando');
+    } finally {
+      dividendosNegados = false;
+    }
   });
 
   console.log('servidor local — servidor sem BRAPI_TOKEN (caso do usuário)');

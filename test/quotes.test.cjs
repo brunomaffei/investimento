@@ -369,6 +369,15 @@ const resposta = (results) => ({ ok: true, json: async () => ({ results }) });
     );
   });
 
+  await teste('quando módulos e cotação falham, reporta a falha da cotação', async () => {
+    const http = fetchFalso([
+      { quando: (u) => u.includes('modules='), responde: () => ({ ok: false, status: 403 }) },
+      { quando: () => true, responde: () => ({ ok: false, status: 404 }) },
+    ]);
+    const { erros } = await buscarCotacoes(['XPTO9'], { token: 't', fundamentos: true, fetchImpl: http });
+    assert.match(erros.XPTO9, /não encontrado/, 'o 404 diz mais do que o 403 do módulo pago');
+  });
+
   console.log('normalizar e proventos');
 
   await teste('preço inválido ou zerado vira null', async () => {

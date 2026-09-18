@@ -416,7 +416,9 @@
         avisos.add('Fundamentos não liberados no seu plano da brapi — só a cotação foi atualizada.');
         return semModulos;
       }
-      return retorno;
+      // As duas falharam: reportar a falha da consulta SIMPLES, que é a informativa
+      // (um 404 de ticker inexistente diz mais do que o 403 do módulo pago).
+      return semModulos;
     };
 
     for (const lote of dividirEmLotes(limpos, LOTE)) {
