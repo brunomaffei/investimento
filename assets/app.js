@@ -553,7 +553,7 @@
       status(
         local.disponivel
           ? 'Este servidor local é de uma versão anterior, sem o rastreador. Pare e rode de novo: node tools/servidor.mjs'
-          : 'O rastreador precisa do servidor local (é ele que lê a fonte dos dados). No terminal, dentro da pasta do projeto: node tools/servidor.mjs — depois abra http://localhost:8765',
+          : 'O rastreador precisa do servidor local (é ele que lê a fonte dos dados). No terminal, dentro da pasta do projeto: npm start — depois abra http://localhost:8787',
         'alerta', [], '#r-status',
       );
       return;
