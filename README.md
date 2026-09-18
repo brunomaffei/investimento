@@ -244,6 +244,26 @@ Duas decisões de integração:
   na raiz, o que dá LPA sem plano pago. Enquanto a v2 não comprovar o mesmo campo,
   pedir fundamentos usa a v1 — trocar às cegas custaria esse LPA de graça.
 
+## Tudo de graça: de onde vem cada dado sem pagar nada
+
+A corrente foi montada para que **nenhum campo dependa de plano pago**:
+
+| Dado | Fonte gratuita | Precisa de cadastro? |
+| --- | --- | --- |
+| Cotação, nome, setor | brapi v2 (token grátis, 15 mil req/mês) | sim, token grátis |
+| LPA | brapi — `earningsPerShare` vem na resposta comum | o mesmo token |
+| **Proventos (DPA 12m)** | **Yahoo Finance v8** — `chart/BBAS3.SA?events=div` | **não, nem token** |
+| Proventos (alternativa) | brapi `/v2/*/dividends` (plano pago) ou bolsai (200/dia) | conforme a fonte |
+
+A ordem de tentativa para proventos é: bolsai (se houver `BOLSAI_KEY`) → brapi →
+**Yahoo**. Só se consulta o degrau seguinte para o que ficou faltando, e o campo
+`fonteProventos` de cada ativo registra quem respondeu.
+
+Sobre o Yahoo, para não haver surpresa: é uma API **não oficial** (a empresa nunca
+a publicou e pode mudar sem aviso), não funciona a partir do navegador por causa de
+CORS — por isso a consulta sai do servidor — e tickers da B3 levam o sufixo `.SA`.
+`YAHOO=0` desliga essa fonte.
+
 ## LPA e proventos automáticos (bolsai)
 
 A brapi cobre a **cotação** no plano gratuito, mas não os fundamentos. Para o LPA
@@ -316,7 +336,7 @@ Digite como for mais natural — o app entende formato brasileiro e atalhos de e
 ## Testes
 
 ```bash
-npm test          # 173 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
+npm test          # 189 testes de cálculo, cotação, bolsai, servidor e CLI (node puro)
 npm run test:ui   # 94 verificações de interface com Chromium (precisa de playwright-core)
 ```
 
@@ -340,6 +360,7 @@ assets/seed.js                carteira e configuração iniciais
 assets/styles.css             tema escuro, responsivo
 assets/brapi-v2.js            cliente da API v2 da brapi (cotação e dividendos, header Bearer)
 assets/proventos.js           soma de proventos de 12 meses, tolerante ao formato da fonte
+assets/yahoo.js               proventos e preço pelo Yahoo (grátis, sem cadastro)
 assets/bolsai.js              fundamentos (LPA e proventos) pela bolsai
 tools/servidor.mjs            servidor local + proxy da brapi e da bolsai (npm start)
 tools/inspecionar-bolsai.mjs  mostra a resposta real da bolsai e o campo reconhecido

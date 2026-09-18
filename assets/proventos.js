@@ -22,6 +22,23 @@
   const CANDIDATOS_VALOR = ['rate', 'value', 'valor', 'amount', 'dividend', 'provento', 'cash_amount'];
   const COLECOES = ['dividends', 'dividendos', 'cashDividends', 'cash_dividends', 'results', 'data', 'events', 'eventos'];
 
+  /**
+   * Converte a data do evento em milissegundos. Além de texto ISO, aceita epoch:
+   * o Yahoo manda segundos (1717027200) e Date.parse devolveria NaN, fazendo um
+   * provento de anos atrás passar pelo corte de 12 meses.
+   * @param {string|number} valor
+   * @returns {number} NaN quando não dá para interpretar.
+   */
+  function paraMilissegundos(valor) {
+    if (typeof valor === 'number' || /^\d{9,14}$/.test(String(valor || ''))) {
+      const n = Number(valor);
+      if (!Number.isFinite(n) || n <= 0) return NaN;
+      // Menos de 1e12 é segundo (1e12 ms = 2001); acima já é milissegundo.
+      return n < 1e12 ? n * 1000 : n;
+    }
+    return Date.parse(valor);
+  }
+
   const numero = (v) => {
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
     if (typeof v === 'string' && v.trim()) {
@@ -89,7 +106,7 @@
       if (valor === null || valor <= 0) continue;
 
       const chaveData = CANDIDATOS_DATA.find((c) => evento[c]);
-      const data = chaveData ? Date.parse(evento[chaveData]) : NaN;
+      const data = chaveData ? paraMilissegundos(evento[chaveData]) : NaN;
       // Evento sem data legível entra: é melhor somar a menos do que inventar.
       if (Number.isFinite(data) && data < limite) continue;
 
@@ -100,5 +117,5 @@
     return { valor: usados ? soma : null, eventos: usados, chaveValor };
   }
 
-  return { somar12m, listaDeEventos, CANDIDATOS_DATA, CANDIDATOS_VALOR, COLECOES };
+  return { somar12m, listaDeEventos, paraMilissegundos, CANDIDATOS_DATA, CANDIDATOS_VALOR, COLECOES };
 });

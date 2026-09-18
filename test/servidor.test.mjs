@@ -102,9 +102,29 @@ brapiV2Falsa.listen(0);
 await once(brapiV2Falsa, 'listening');
 const baseV2Falsa = `http://127.0.0.1:${brapiV2Falsa.address().port}/api/v2/stocks`;
 
+// Yahoo falso: proventos em epoch de segundos, como o de verdade
+const pedidosYahoo = [];
+const yahooFalso = createServer((pedido, resposta) => {
+  pedidosYahoo.push(pedido.url);
+  const agora = Math.floor(Date.now() / 1000);
+  resposta.writeHead(200, { 'Content-Type': 'application/json' });
+  resposta.end(JSON.stringify({ chart: { error: null, results: undefined, result: [{
+    meta: { regularMarketPrice: 22.65, currency: 'BRL', longName: 'Ativo do Yahoo' },
+    events: { dividends: {
+      [agora]: { amount: 0.4, date: agora },
+      [agora - 200]: { amount: 0.35, date: agora - 200 },
+      1500000000: { amount: 9, date: 1500000000 },
+    } },
+  }] } }));
+});
+yahooFalso.listen(0);
+await once(yahooFalso, 'listening');
+const baseYahooFalsa = `http://127.0.0.1:${yahooFalso.address().port}/v8/finance/chart`;
+
 const { porta: portaV2, processo: servidorV2 } = await subirServidor(['--token', TOKEN], {
   BRAPI_BASE: baseFalsa,
   BRAPI_V2_BASE: baseV2Falsa,
+  YAHOO_BASE: baseYahooFalsa,
 });
 
 const url = (caminho) => `http://127.0.0.1:${porta}${caminho}`;
@@ -253,6 +273,41 @@ try {
     assert.ok(!pedidosV2.some((p) => p.url.includes('/dividends')), 'dividendos só quando pedidos');
   });
 
+  console.log('servidor local — proventos gratuitos pelo Yahoo');
+
+  await teste('quando a brapi recusa dividendos, o Yahoo preenche', async () => {
+    dividendosNegados = true;
+    pedidosYahoo.length = 0;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=BBAS3&fundamentos=1'))).json();
+      assert.ok(Math.abs(corpo.dados.BBAS3.dpa12m - 0.75) < 1e-9, `esperado 0,75 e veio ${corpo.dados.BBAS3.dpa12m}`);
+      assert.equal(corpo.dados.BBAS3.fonteProventos, 'yahoo');
+      assert.ok(pedidosYahoo[0].includes('BBAS3.SA'), `ticker vai com sufixo .SA: ${pedidosYahoo[0]}`);
+      assert.ok(pedidosYahoo[0].includes('events=div'), pedidosYahoo[0]);
+      assert.ok(corpo.avisos.some((a) => /vieram do Yahoo/.test(a)), JSON.stringify(corpo.avisos));
+    } finally {
+      dividendosNegados = false;
+    }
+  });
+
+  await teste('provento antigo (epoch de 2017) não entra na soma de 12 meses', async () => {
+    dividendosNegados = true;
+    try {
+      const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=ITSA4&fundamentos=1'))).json();
+      assert.ok(corpo.dados.ITSA4.dpa12m < 1, 'o evento de 2017 valia 9,00 — não pode estar somado');
+      assert.equal(corpo.dados.ITSA4.eventos12m, 2);
+    } finally {
+      dividendosNegados = false;
+    }
+  });
+
+  await teste('quem já tem provento da brapi não gasta consulta no Yahoo', async () => {
+    pedidosYahoo.length = 0;
+    const corpo = await (await fetch(urlV2('/api/cotacoes?tickers=BBAS3&fundamentos=1'))).json();
+    assert.equal(corpo.dados.BBAS3.fonteProventos, 'brapi stocks');
+    assert.equal(pedidosYahoo.length, 0, 'o Yahoo é só para o que faltou');
+  });
+
   console.log('servidor local — recuperação entre versões da API');
 
   await teste('ticker com 404 na v1 é buscado na v2 e entra na lista', async () => {
@@ -357,6 +412,7 @@ try {
   servidorV2.kill();
   brapiFalso.close();
   brapiV2Falsa.close();
+  yahooFalso.close();
 }
 
 console.log(falhas ? `\n${falhas} teste(s) do servidor falharam` : '\nTodos os testes do servidor passaram');

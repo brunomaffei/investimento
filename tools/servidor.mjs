@@ -28,6 +28,7 @@ const require = createRequire(import.meta.url);
 const { buscarCotacoes, normalizar, buscarTickersParecidos, ASSINATURA_SERVIDOR, BASE } = require('../assets/quotes.js');
 const { buscarFundamentos, BASE: BASE_BOLSAI } = require('../assets/bolsai.js');
 const { buscarCotacoes: buscarCotacoesV2, buscarProventos12m, BASE_V2 } = require('../assets/brapi-v2.js');
+const { buscarResumo: buscarResumoYahoo, BASE_YAHOO } = require('../assets/yahoo.js');
 
 /**
  * Lê a versão do código servido direto do .git, sem depender do git instalado.
@@ -77,12 +78,40 @@ function lerArgumentos(argv) {
     chaveBolsai: valor('--bolsai') || process.env.BOLSAI_KEY || '',
     baseBolsai: process.env.BOLSAI_BASE || BASE_BOLSAI,
     baseV2: process.env.BRAPI_V2_BASE || BASE_V2,
+    baseYahoo: process.env.YAHOO_BASE || BASE_YAHOO,
+    // YAHOO=0 desliga a fonte gratuita de proventos.
+    usarYahoo: process.env.YAHOO !== '0',
     // BRAPI_V2=0 desliga a v2 e usa apenas a v1.
     usarV2: process.env.BRAPI_V2 !== '0',
   };
 }
 
-const { porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2 } = lerArgumentos(process.argv);
+const { porta, token, base, chaveBolsai, baseBolsai, baseV2, usarV2, baseYahoo, usarYahoo } = lerArgumentos(process.argv);
+
+/**
+ * Proventos pelo Yahoo: grátis, sem token e sem cadastro. É o degrau final da
+ * corrente — só roda para o que a brapi não trouxe.
+ * @param {Object} dados mapa ticker -> registro normalizado
+ * @returns {Promise<{preenchidos: number, falhas: string[]}>}
+ */
+async function completarProventosPeloYahoo(dados) {
+  const preenchidos = [];
+  const falhas = [];
+  for (const [ticker, info] of Object.entries(dados)) {
+    if (info.dpa12m !== null && info.dpa12m !== undefined) continue;
+    try {
+      const resumo = await buscarResumoYahoo(ticker, { base: baseYahoo });
+      if (resumo.dpa12m === null) continue;
+      info.dpa12m = resumo.dpa12m;
+      info.fonteProventos = 'yahoo';
+      info.eventos12m = resumo.eventos;
+      preenchidos.push(ticker);
+    } catch (erro) {
+      falhas.push(`${ticker} (${erro.message})`);
+    }
+  }
+  return { preenchidos, falhas };
+}
 
 /**
  * Cotações pela API v2 (rota /quote?symbols=…, token no header Bearer), caindo
@@ -274,6 +303,18 @@ const servidor = createServer(async (pedido, resposta) => {
         if (comProventos) console.log(`[dividendos] ${comProventos} ativo(s) com provento de 12 meses`);
       }
 
+      // Último degrau: o que ninguém trouxe, busca no Yahoo — grátis e sem cadastro.
+      if (fundamentos && usarYahoo) {
+        const { preenchidos, falhas } = await completarProventosPeloYahoo(resultado.dados);
+        if (preenchidos.length) {
+          avisos.push(`Proventos de ${preenchidos.length} ativo(s) vieram do Yahoo (fonte gratuita): ${preenchidos.join(', ')}.`);
+          console.log(`[yahoo] ${preenchidos.length} ativo(s) com provento de 12 meses`);
+        }
+        if (falhas.length && !preenchidos.length) {
+          avisos.push(`O Yahoo também não trouxe proventos: ${falhas.slice(0, 3).join('; ')}.`);
+        }
+      }
+
       if (fundamentos && chaveBolsai) {
         const extras = await buscarFundamentos(Object.keys(resultado.dados), {
           chave: chaveBolsai,
@@ -320,6 +361,6 @@ servidor.listen(porta, () => {
   if (versao?.sha) console.log(`Versão servida: ${versao.sha}${versao.branch ? ` (${versao.branch})` : ''}`);
   console.log(chaveBolsai
     ? 'Fundamentos (LPA e proventos) pela bolsai: chave carregada.'
-    : 'Sem BOLSAI_KEY: LPA e dividendos dependeriam de plano pago na brapi. Pegue uma chave grátis em usebolsai.com.');
+    : 'Sem BOLSAI_KEY: LPA vem da própria brapi e os proventos, do Yahoo (grátis, sem cadastro).');
   console.log(token ? 'Token da brapi carregado (fica no servidor, não vai ao navegador).' : 'Sem BRAPI_TOKEN: use --token ou a variável de ambiente para liberar todos os tickers.');
 });
